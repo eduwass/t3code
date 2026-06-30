@@ -39,6 +39,18 @@ interface RecentSnapshot {
 
 const POLL_MS = 30_000;
 
+/**
+ * Date-range filter over the warm 7-day cache. All options are within the
+ * cached window, so filtering is client-side and instant; anything older is
+ * reached via search ("Older than 7 days…"), not this dropdown.
+ */
+const RANGE_OPTIONS = [
+  { days: 1, label: "Today" },
+  { days: 3, label: "Last 3 days" },
+  { days: 7, label: "Last 7 days" },
+] as const;
+const DEFAULT_RANGE_DAYS = 7;
+
 const AGENT_DOT: Record<string, string> = {
   claude: "bg-blue-500",
   codex: "bg-green-500",
@@ -92,6 +104,7 @@ export function AgentsviewSection() {
   const [expanded, setExpanded] = useState(false);
   const [collapsedProjects, setCollapsedProjects] = useState<ReadonlySet<string>>(new Set());
   const [resumingId, setResumingId] = useState<string | null>(null);
+  const [rangeDays, setRangeDays] = useState<number>(DEFAULT_RANGE_DAYS);
   const resumeInFlight = useRef(false);
   const { snapshot, errored } = useRecentExternalSessions(expanded);
 
@@ -137,8 +150,23 @@ export function AgentsviewSection() {
     [router],
   );
 
-  const groups = snapshot?.groups ?? [];
+  const rawGroups = snapshot?.groups ?? [];
+  const cutoff = Date.now() - rangeDays * 86_400_000;
+  const groups =
+    rangeDays >= DEFAULT_RANGE_DAYS
+      ? rawGroups
+      : rawGroups
+          .map((group) => ({
+            ...group,
+            sessions: group.sessions.filter((row) => {
+              const at = Date.parse(row.lastActiveAt);
+              return Number.isNaN(at) || at >= cutoff;
+            }),
+          }))
+          .filter((group) => group.sessions.length > 0);
   const totalSessions = groups.reduce((sum, group) => sum + group.sessions.length, 0);
+  const activeRangeLabel =
+    RANGE_OPTIONS.find((option) => option.days === rangeDays)?.label ?? "Last 7 days";
 
   return (
     <SidebarGroup className="px-2 py-2">
@@ -161,6 +189,20 @@ export function AgentsviewSection() {
 
       {expanded ? (
         <div className="flex flex-col">
+          <div className="mb-1 flex items-center justify-end px-2">
+            <select
+              value={rangeDays}
+              onChange={(event) => setRangeDays(Number(event.target.value))}
+              className="cursor-pointer rounded border border-border/60 bg-transparent py-0.5 pl-1 pr-0.5 text-[10px] text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
+              aria-label="Filter by date range"
+            >
+              {RANGE_OPTIONS.map((option) => (
+                <option key={option.days} value={option.days}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
           {snapshot === null && !errored ? (
             <div className="px-2 py-2 text-xs text-muted-foreground/60">Loading…</div>
           ) : errored || snapshot?.available === false ? (
@@ -169,7 +211,7 @@ export function AgentsviewSection() {
             </div>
           ) : groups.length === 0 ? (
             <div className="px-2 py-2 text-xs text-muted-foreground/60">
-              No recent sessions (last 7 days)
+              No sessions ({activeRangeLabel.toLowerCase()})
             </div>
           ) : (
             groups.map((group) => {
