@@ -10,6 +10,7 @@ import {
   assetRouteLayer,
   resumeRouteLayer,
   externalSessionsRouteLayer,
+  externalImportStatusRouteLayer,
   serverEnvironmentHttpApiLayer,
   staticAndDevRouteLayer,
   browserApiCorsLayer,
@@ -22,6 +23,7 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import { ProviderSessionDirectoryLive } from "./provider/Layers/ProviderSessionDirectory.ts";
 import * as RecentExternalSessions from "./externalSessions/RecentExternalSessions.ts";
+import * as ExternalImportStatus from "./externalSessions/ExternalImportStatus.ts";
 import * as ProviderSessionRuntime from "./persistence/ProviderSessionRuntime.ts";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry.ts";
 import * as ProviderEventLoggers from "./provider/Layers/ProviderEventLoggers.ts";
@@ -334,6 +336,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
 const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   // Misc.
   Layer.provideMerge(RecentExternalSessions.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+  Layer.provideMerge(ExternalImportStatus.layer),
   Layer.provideMerge(ProcessDiagnostics.layer),
   Layer.provideMerge(ProcessResourceMonitor.layer),
   Layer.provideMerge(TraceDiagnostics.layer),
@@ -359,6 +362,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     otlpTracesProxyRouteLayer,
     resumeRouteLayer,
     externalSessionsRouteLayer,
+    externalImportStatusRouteLayer,
     assetRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,

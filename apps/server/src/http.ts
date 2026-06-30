@@ -41,6 +41,7 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { importExternalSession } from "./externalSessions/ExternalSessionImport.ts";
+import * as ExternalImportStatus from "./externalSessions/ExternalImportStatus.ts";
 import * as RecentExternalSessions from "./externalSessions/RecentExternalSessions.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 
@@ -213,10 +214,27 @@ export const resumeRouteLayer = HttpRouter.add(
 
     const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
     const environmentId = yield* serverEnvironment.getEnvironmentId;
+    const importStatus = yield* ExternalImportStatus.ExternalImportStatus;
 
     return yield* importExternalSession({ provider, sessionId }).pipe(
-      Effect.map((result) =>
-        HttpServerResponse.redirect(`/${environmentId}/${result.threadId}`, { status: 302 }),
+      // The fast phase (validate, create/reset the thread shell, bind) runs
+      // here so errors surface and the thread exists; the slow hydration is
+      // forked as a daemon so the browser is redirected immediately and watches
+      // the thread populate live. The thread is flagged "importing" until done.
+      Effect.flatMap((result) =>
+        importStatus
+          .begin(result.threadId)
+          .pipe(
+            Effect.andThen(
+              result.hydrate.pipe(
+                Effect.ensuring(importStatus.end(result.threadId)),
+                Effect.forkDetach,
+              ),
+            ),
+            Effect.as(
+              HttpServerResponse.redirect(`/${environmentId}/${result.threadId}`, { status: 302 }),
+            ),
+          ),
       ),
       Effect.catchTag("ExternalSessionImportError", (error) =>
         Effect.succeed(HttpServerResponse.text(error.reason, { status: 422 })),
@@ -244,6 +262,28 @@ export const externalSessionsRouteLayer = HttpRouter.add(
     const recent = yield* RecentExternalSessions.RecentExternalSessions;
     const snapshot = yield* recent.get;
     return HttpServerResponse.jsonUnsafe(snapshot);
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+/**
+ * GET /api/external-sessions/import-status — thread ids whose external-session
+ * import is still hydrating in the background, so the web client can show an
+ * "Importing…" affordance instead of treating partial content as final.
+ */
+export const externalImportStatusRouteLayer = HttpRouter.add(
+  "GET",
+  "/api/external-sessions/import-status",
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    const importStatus = yield* ExternalImportStatus.ExternalImportStatus;
+    const threadIds = yield* importStatus.current;
+    return HttpServerResponse.jsonUnsafe({ threadIds });
   }).pipe(
     Effect.catchTags({
       EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
