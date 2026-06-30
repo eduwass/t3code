@@ -424,5 +424,23 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
 
   yield* closeTurn(lastCreatedAt);
 
+  // Settle the imported thread: an external session has no live provider, so
+  // it must not render as a running session. session.exited clears any active
+  // turn and sets status to "stopped" — no perpetual "Working …" spinner or
+  // stop button. (A mid-stream turn whose completion was rejected by the
+  // active-turn conflict guard would otherwise pin the session "running".)
+  {
+    const eventId = EventId.make(yield* uuid);
+    events.push({
+      type: "session.exited",
+      eventId,
+      provider: PROVIDER,
+      threadId,
+      createdAt: lastCreatedAt,
+      payload: { exitKind: "graceful" },
+      raw: { source: "claude.sdk.message", method: "claude/replay/session-exit", payload: {} },
+    } as ProviderRuntimeEvent);
+  }
+
   return { events, userPrompts };
 });
