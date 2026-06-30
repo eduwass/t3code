@@ -257,6 +257,8 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
   {
     type:
       | "thread.message-sent"
+      | "thread.history-backfilled"
+      | "thread.content-reset"
       | "thread.proposed-plan-upserted"
       | "thread.activity-appended"
       | "thread.turn-diff-completed"
@@ -266,6 +268,10 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
 > {
   return (
     event.type === "thread.message-sent" ||
+    // Backfill + reset drive imported/synced threads; an open client must get
+    // them live or agent replies only appear on refresh.
+    event.type === "thread.history-backfilled" ||
+    event.type === "thread.content-reset" ||
     event.type === "thread.proposed-plan-upserted" ||
     event.type === "thread.activity-appended" ||
     event.type === "thread.turn-diff-completed" ||
