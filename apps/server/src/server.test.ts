@@ -86,6 +86,7 @@ import { ProviderSessionDirectory } from "./provider/Services/ProviderSessionDir
 import { ProviderInstanceRegistry } from "./provider/Services/ProviderInstanceRegistry.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
 import * as RecentExternalSessions from "./externalSessions/RecentExternalSessions.ts";
+import * as ExternalImportStatus from "./externalSessions/ExternalImportStatus.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -747,6 +748,12 @@ const buildAppUnderTest = (options?: {
           Layer.succeed(RecentExternalSessions.RecentExternalSessions, {
             get: Effect.succeed({ groups: [], updatedAt: null, available: false }),
             refresh: Effect.void,
+          }),
+          // Required by the resume + import-status routes.
+          Layer.succeed(ExternalImportStatus.ExternalImportStatus, {
+            begin: () => Effect.void,
+            end: () => Effect.void,
+            current: Effect.succeed([]),
           }),
         ),
       ),

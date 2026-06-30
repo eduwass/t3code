@@ -653,7 +653,10 @@ export const importExternalSession = (input: {
         .pipe(Effect.catchCause(() => Effect.void));
     }
 
-    {
+    // Deferred hydration: the route runs this in the background and redirects
+    // immediately, so the freshly-reset thread opens at once and the replayed
+    // content streams into it live as it processes.
+    const hydrate = Effect.gen(function* () {
       // Hydrate the thread with prior conversation so it opens showing context
       // instead of an empty box. Best-effort throughout: any failure here must
       // not fail the import — resume still works regardless.
@@ -722,10 +725,11 @@ export const importExternalSession = (input: {
             .pipe(Effect.catchCause(() => Effect.void));
         }
       }
-    }
+    });
 
     // Pre-seed (or repair) the resume binding so the first turn resumes the
-    // native session.
+    // native session. This is part of the fast phase (before hydration) so a
+    // resume works the moment the route redirects.
     yield* directory
       .upsert({
         threadId,
@@ -743,5 +747,5 @@ export const importExternalSession = (input: {
         ),
       );
 
-    return { threadId, alreadyImported } satisfies ExternalSessionImportResult;
+    return { threadId, alreadyImported, hydrate };
   });
