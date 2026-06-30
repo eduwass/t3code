@@ -268,7 +268,10 @@ const resolveProjectId = (workspaceRoot: string, modelSelection: ModelSelection)
 
     const projectId = ProjectId.make(deterministicProjectId(workspaceRoot));
     const createdAt = DateTime.formatIso(yield* DateTime.now);
-    yield* engine
+    // On success this is our deterministic id; on a concurrent-create conflict
+    // we adopt whatever project now owns the workspace root (its id is what we
+    // must return, not necessarily our deterministic one).
+    return yield* engine
       .dispatch({
         type: "project.create",
         commandId: CommandId.make(yield* crypto.randomUUIDv4),
@@ -279,7 +282,7 @@ const resolveProjectId = (workspaceRoot: string, modelSelection: ModelSelection)
         createdAt,
       })
       .pipe(
-        // A concurrent import may have created the project first; if so, adopt it.
+        Effect.as(projectId),
         Effect.catch((cause) =>
           lookup().pipe(
             Effect.flatMap((again) =>
@@ -291,9 +294,7 @@ const resolveProjectId = (workspaceRoot: string, modelSelection: ModelSelection)
             ),
           ),
         ),
-        Effect.map(() => projectId),
       );
-    return projectId;
   });
 
 export const importExternalSession = (input: {
