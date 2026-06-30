@@ -1096,6 +1096,10 @@ export function makeOpenCodeAdapter(
               // the first turn rather than being validated up front.
               const resumeSessionId = readOpenCodeResumeSessionId(input.resumeCursor);
               let openCodeSession: { readonly id: string };
+              // Track whether WE created the native session: a resumed session
+              // is owned by the original CLI run, so race-loser cleanup must
+              // never abort it (that would destroy the user's conversation).
+              let createdNewOpenCodeSession = false;
               if (resumeSessionId !== undefined) {
                 openCodeSession = { id: resumeSessionId };
               } else {
@@ -1112,12 +1116,14 @@ export function makeOpenCodeAdapter(
                   });
                 }
                 openCodeSession = created.data;
+                createdNewOpenCodeSession = true;
               }
               return {
                 sessionScope,
                 server,
                 client,
                 openCodeSession,
+                createdNewOpenCodeSession,
               };
             }).pipe(Effect.provideService(Scope.Scope, sessionScope)),
           );
@@ -1134,11 +1140,15 @@ export function makeOpenCodeAdapter(
         if (raceWinner) {
           // Another call won the race – clean up the session we just created
           // (including the remote SDK session) and return the existing one.
-          yield* runOpenCodeSdk("session.abort", () =>
-            started.client.session.abort({
-              sessionID: started.openCodeSession.id,
-            }),
-          ).pipe(Effect.ignore);
+          // Only abort the native session if WE created it; a resumed session
+          // belongs to the original CLI run and must be left intact.
+          if (started.createdNewOpenCodeSession) {
+            yield* runOpenCodeSdk("session.abort", () =>
+              started.client.session.abort({
+                sessionID: started.openCodeSession.id,
+              }),
+            ).pipe(Effect.ignore);
+          }
           yield* Scope.close(started.sessionScope, Exit.void).pipe(Effect.ignore);
           return raceWinner.session;
         }

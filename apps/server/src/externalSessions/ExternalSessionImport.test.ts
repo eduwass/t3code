@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 
 import {
   deterministicThreadId,
+  isValidSessionId,
   PROVIDER_MAP,
   SUPPORTED_EXTERNAL_PROVIDERS,
 } from "./ExternalSessionImport.ts";
@@ -39,6 +40,16 @@ describe("PROVIDER_MAP resume cursors", () => {
     assert.strictEqual(PROVIDER_MAP.claude!.agentsviewId("uuid"), "uuid");
     assert.strictEqual(PROVIDER_MAP.codex!.agentsviewId("uuid"), "codex:uuid");
     assert.strictEqual(PROVIDER_MAP.opencode!.agentsviewId("ses_x"), "opencode:ses_x");
+  });
+
+  it("rejects malformed / dangerous session ids", () => {
+    assert.isTrue(isValidSessionId("f547a133-dde2-4e82-a54c-a81fcbdba1fb"));
+    assert.isTrue(isValidSessionId("ses_0ea5d8f1effeb8pJFzqB18CP6E"));
+    assert.isFalse(isValidSessionId(""));
+    assert.isFalse(isValidSessionId("../../etc/passwd"));
+    assert.isFalse(isValidSessionId("a/b"));
+    assert.isFalse(isValidSessionId("a b"));
+    assert.isFalse(isValidSessionId("x".repeat(257)));
   });
 
   it("exposes claude, codex and opencode as supported", () => {
