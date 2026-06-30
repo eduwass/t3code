@@ -84,6 +84,7 @@ import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import { ProviderSessionDirectory } from "./provider/Services/ProviderSessionDirectory.ts";
 import { ProviderInstanceRegistry } from "./provider/Services/ProviderInstanceRegistry.ts";
+import * as RecentExternalSessions from "./externalSessions/RecentExternalSessions.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -737,6 +738,11 @@ const buildAppUnderTest = (options?: {
           }),
           Layer.mock(ProviderInstanceRegistry)({
             getInstance: () => Effect.succeed(undefined),
+          }),
+          // Required by the /api/external-sessions/recent route.
+          Layer.succeed(RecentExternalSessions.RecentExternalSessions, {
+            get: Effect.succeed({ groups: [], updatedAt: null, available: false }),
+            refresh: Effect.void,
           }),
         ),
       ),

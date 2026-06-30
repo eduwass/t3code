@@ -37,6 +37,7 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { importExternalSession } from "./externalSessions/ExternalSessionImport.ts";
+import * as RecentExternalSessions from "./externalSessions/RecentExternalSessions.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
@@ -217,6 +218,28 @@ export const resumeRouteLayer = HttpRouter.add(
         Effect.succeed(HttpServerResponse.text(error.reason, { status: 422 })),
       ),
     );
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+/**
+ * GET /api/external-sessions/recent — the warm, cached "last 7 days, by
+ * project, recent-first" slice for the AGENTSVIEW sidebar section. Served from
+ * the in-memory cache so it never blocks on the agentsview daemon.
+ */
+export const externalSessionsRouteLayer = HttpRouter.add(
+  "GET",
+  "/api/external-sessions/recent",
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    const recent = yield* RecentExternalSessions.RecentExternalSessions;
+    const snapshot = yield* recent.get;
+    return HttpServerResponse.jsonUnsafe(snapshot);
   }).pipe(
     Effect.catchTags({
       EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
