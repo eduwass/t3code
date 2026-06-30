@@ -361,16 +361,18 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
           ? extractHumanContent(line.message)
           : { text: "", images: [] as ReadonlyArray<ReplayImageRef> };
       const trimmedPrompt = human.text.trim();
-      // Skip harness-injected synthetic turns (background-task notifications,
-      // system reminders, local-command echoes). They are recorded as user
-      // messages but are not human prompts — backfilling them renders as noise
-      // bubbles, and they must not close an assistant burst mid-turn.
-      const hasContent =
-        (trimmedPrompt.length > 0 || human.images.length > 0) &&
-        !isSyntheticUserPrompt(trimmedPrompt);
-      if (hasContent) {
+      // Any user-role message (real prompt OR harness-injected synthetic one)
+      // ends the assistant's burst, so it closes the open turn — otherwise two
+      // bursts separated only by a synthetic notification merge into one turn
+      // whose duration spans the idle gap between them. Synthetic turns
+      // (task-notifications, system reminders, local-command echoes) still are
+      // NOT backfilled as prompts; they'd render as noise bubbles.
+      const isUserMessage = trimmedPrompt.length > 0 || human.images.length > 0;
+      if (isUserMessage) {
         yield* closeTurn();
-        userPrompts.push({ text: trimmedPrompt, createdAt, images: human.images });
+        if (!isSyntheticUserPrompt(trimmedPrompt)) {
+          userPrompts.push({ text: trimmedPrompt, createdAt, images: human.images });
+        }
       }
       continue;
     }
