@@ -417,8 +417,13 @@ const persistReplayImages = (input: {
     const path = yield* Path.Path;
     const out: Array<ChatAttachment> = [];
     for (const ref of input.images) {
-      const bytes = ref.sourcePath
+      // Prefer the original on-disk file; fall back to the inline base64 when
+      // the image-cache file is gone (pruned) or unreadable.
+      const fromPath = ref.sourcePath
         ? yield* fileSystem.readFile(ref.sourcePath).pipe(Effect.option)
+        : Option.none<Uint8Array>();
+      const bytes = Option.isSome(fromPath)
+        ? fromPath
         : ref.base64
           ? Option.some<Uint8Array>(Buffer.from(ref.base64, "base64"))
           : Option.none<Uint8Array>();
