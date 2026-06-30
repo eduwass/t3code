@@ -36,6 +36,7 @@ import {
   failEnvironmentInternal,
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
+import { importExternalSession } from "./externalSessions/ExternalSessionImport.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
@@ -160,6 +161,57 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
           HttpServerResponse.text("Trace export failed.", { status: 502 }),
         ),
       );
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+const RESUME_ROUTE_PREFIX = "/api/resume";
+
+/**
+ * Deep-link endpoint: GET /api/resume/<provider>/<sessionId>
+ *
+ * Imports an external (non-T3) agent session via agentsview, binds it to a
+ * resumable T3 thread, and 302-redirects the browser straight to that thread.
+ * Auth is cookie-based (same as the rest of the API), so clicking the link in
+ * an already-signed-in T3 browser session just works.
+ */
+export const resumeRouteLayer = HttpRouter.add(
+  "GET",
+  `${RESUME_ROUTE_PREFIX}/*`,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+    const suffix = url.value.pathname.slice(`${RESUME_ROUTE_PREFIX}/`.length);
+    const separatorIndex = suffix.indexOf("/");
+    if (separatorIndex <= 0) {
+      return HttpServerResponse.text(
+        "Expected /api/resume/<provider>/<sessionId>.",
+        { status: 400 },
+      );
+    }
+    const provider = decodeURIComponent(suffix.slice(0, separatorIndex));
+    const sessionId = decodeURIComponent(suffix.slice(separatorIndex + 1));
+
+    const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
+    const environmentId = yield* serverEnvironment.getEnvironmentId;
+
+    return yield* importExternalSession({ provider, sessionId }).pipe(
+      Effect.map((result) =>
+        HttpServerResponse.redirect(`/${environmentId}/${result.threadId}`, { status: 302 }),
+      ),
+      Effect.catchTag("ExternalSessionImportError", (error) =>
+        Effect.succeed(HttpServerResponse.text(error.reason, { status: 422 })),
+      ),
+    );
   }).pipe(
     Effect.catchTags({
       EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
