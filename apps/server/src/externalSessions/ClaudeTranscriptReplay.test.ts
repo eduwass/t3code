@@ -185,6 +185,36 @@ describe("claudeTranscriptToReplay", () => {
       }),
     );
 
+    it.effect("completes a turn at the assistant's last activity, not the next prompt", () =>
+      Effect.gen(function* () {
+        const lines: ReadonlyArray<unknown> = [
+          {
+            type: "user",
+            uuid: "u1",
+            timestamp: "2026-06-30T10:00:00.000Z",
+            message: { role: "user", content: "do it" },
+          },
+          {
+            type: "assistant",
+            uuid: "a1",
+            timestamp: "2026-06-30T10:00:05.000Z",
+            message: { role: "assistant", content: [{ type: "text", text: "done" }] },
+          },
+          // Human comes back 3 hours later — must NOT count as turn duration.
+          {
+            type: "user",
+            uuid: "u2",
+            timestamp: "2026-06-30T13:00:00.000Z",
+            message: { role: "user", content: "next" },
+          },
+        ];
+        const { events } = yield* claudeTranscriptToReplay({ lines, threadId });
+        const completed = events.find((e) => e.type === "turn.completed");
+        // Completed at the assistant activity time (10:00:05), not 13:00.
+        assert.equal(completed?.createdAt, "2026-06-30T10:00:05.000Z");
+      }),
+    );
+
     it.effect("emits only a settle event for an empty transcript", () =>
       Effect.gen(function* () {
         const { events, userPrompts } = yield* claudeTranscriptToReplay({ lines: [], threadId });
