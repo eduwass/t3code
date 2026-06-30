@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
-import { ChevronDownIcon, ChevronRightIcon, FolderIcon, UsersRoundIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  FolderIcon,
+  SearchIcon,
+  UsersRoundIcon,
+} from "lucide-react";
 
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { SidebarGroup } from "./ui/sidebar";
@@ -78,6 +84,56 @@ const AGENT_TEXT: Record<string, string> = {
   opencode: "text-purple-500",
 };
 
+function SessionRow({
+  row,
+  busy,
+  onOpen,
+}: {
+  readonly row: ExternalSessionRow;
+  readonly busy: boolean;
+  readonly onOpen: (row: ExternalSessionRow) => void;
+}) {
+  const live = isLiveSession(row.lastActiveAt);
+  return (
+    <button
+      type="button"
+      className="flex w-full items-start gap-2 rounded-md py-1 pl-7 pr-2 text-left transition-colors hover:bg-accent disabled:opacity-50"
+      onClick={() => onOpen(row)}
+      disabled={busy}
+      title={row.title}
+    >
+      <span
+        className={`mt-1.5 size-1.5 shrink-0 rounded-full ${AGENT_DOT[row.agent] ?? "bg-muted-foreground"} ${
+          live ? "ring-2 ring-green-500 ring-offset-1 ring-offset-background" : ""
+        }`}
+        title={live ? "Live / working" : undefined}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] text-foreground">
+          {row.title || "Untitled session"}
+        </span>
+        <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+          <span>{formatRelativeTimeLabel(row.lastActiveAt)}</span>
+          {row.messageCount > 0 ? (
+            <>
+              <span>·</span>
+              <span className="tabular-nums">•{row.messageCount}</span>
+            </>
+          ) : null}
+          {row.isTeammate ? <UsersRoundIcon className="size-3 text-muted-foreground/50" /> : null}
+        </span>
+      </span>
+      <span
+        className={`mt-0.5 shrink-0 text-[9px] font-medium uppercase tracking-wide ${
+          AGENT_TEXT[row.agent] ?? "text-muted-foreground"
+        }`}
+      >
+        {row.provider}
+      </span>
+    </button>
+  );
+}
+
 function useRecentExternalSessions(enabled: boolean) {
   const [snapshot, setSnapshot] = useState<RecentSnapshot | null>(null);
   const [errored, setErrored] = useState(false);
@@ -121,6 +177,12 @@ export function AgentsviewSection() {
   const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(new Set());
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [rangeDays, setRangeDays] = useState<number>(DEFAULT_RANGE_DAYS);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ReadonlyArray<ExternalSessionRow> | null>(
+    null,
+  );
+  const [searching, setSearching] = useState(false);
   const resumeInFlight = useRef(false);
   const foldedSeeded = useRef(false);
   const { snapshot, errored } = useRecentExternalSessions(expanded);
@@ -132,6 +194,39 @@ export function AgentsviewSection() {
     foldedSeeded.current = true;
     setCollapsedProjects(new Set(snapshot.groups.map((group) => group.project)));
   }, [expanded, snapshot]);
+
+  // Debounced full-text search (the slow path beyond the 7-day cache).
+  useEffect(() => {
+    if (!searchOpen) return;
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setSearchResults(null);
+      setSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `/api/external-sessions/search?q=${encodeURIComponent(query)}`,
+          { credentials: "include" },
+        );
+        const data = response.ok
+          ? ((await response.json()) as { sessions?: ReadonlyArray<ExternalSessionRow> })
+          : { sessions: [] };
+        if (!cancelled) setSearchResults(data.sessions ?? []);
+      } catch {
+        if (!cancelled) setSearchResults([]);
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchOpen, searchQuery]);
 
   const toggleProject = useCallback((project: string) => {
     setCollapsedProjects((prev) => {
@@ -278,47 +373,12 @@ export function AgentsviewSection() {
                         return (
                           <>
                             {visible.map((row) => (
-                              <button
+                              <SessionRow
                                 key={`${row.provider}:${row.nativeId}`}
-                                type="button"
-                                className="flex w-full items-start gap-2 rounded-md py-1 pl-7 pr-2 text-left transition-colors hover:bg-accent disabled:opacity-50"
-                                onClick={() => void openSession(row)}
-                                disabled={resumingId === row.nativeId}
-                                title={row.title}
-                              >
-                                <span
-                                  className={`mt-1.5 size-1.5 shrink-0 rounded-full ${
-                                    AGENT_DOT[row.agent] ?? "bg-muted-foreground"
-                                  } ${
-                                    isLiveSession(row.lastActiveAt)
-                                      ? "ring-2 ring-green-500 ring-offset-1 ring-offset-background"
-                                      : ""
-                                  }`}
-                                  title={
-                                    isLiveSession(row.lastActiveAt) ? "Live / working" : undefined
-                                  }
-                                />
-                                <span className="min-w-0 flex-1">
-                                  <span className="block truncate text-[13px] text-foreground">
-                                    {row.title || "Untitled session"}
-                                  </span>
-                                  <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
-                                    <span>{formatRelativeTimeLabel(row.lastActiveAt)}</span>
-                                    <span>·</span>
-                                    <span className="tabular-nums">•{row.messageCount}</span>
-                                    {row.isTeammate ? (
-                                      <UsersRoundIcon className="size-3 text-muted-foreground/50" />
-                                    ) : null}
-                                  </span>
-                                </span>
-                                <span
-                                  className={`mt-0.5 shrink-0 text-[9px] font-medium uppercase tracking-wide ${
-                                    AGENT_TEXT[row.agent] ?? "text-muted-foreground"
-                                  }`}
-                                >
-                                  {row.provider}
-                                </span>
-                              </button>
+                                row={row}
+                                busy={resumingId === row.nativeId}
+                                onOpen={openSession}
+                              />
                             ))}
                             {hidden > 0 ? (
                               <button
@@ -336,6 +396,50 @@ export function AgentsviewSection() {
               );
             })
           )}
+
+          {/* Older than 7 days → full-text search (the slow path). */}
+          <div className="mt-1 border-t border-border/40 pt-1">
+            {searchOpen ? (
+              <>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search all sessions…"
+                  className="mb-1 w-full rounded-md border border-border/60 bg-transparent px-2 py-1 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring"
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
+                />
+                {searching ? (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground/60">Searching…</div>
+                ) : searchResults === null ? (
+                  <div className="px-2 py-1.5 text-[11px] text-muted-foreground/50">
+                    Type to search older sessions
+                  </div>
+                ) : searchResults.length === 0 ? (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground/60">No matches</div>
+                ) : (
+                  searchResults.map((row) => (
+                    <SessionRow
+                      key={`search:${row.provider}:${row.nativeId}`}
+                      row={row}
+                      busy={resumingId === row.nativeId}
+                      onOpen={openSession}
+                    />
+                  ))
+                )}
+              </>
+            ) : (
+              <button
+                type="button"
+                className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+                onClick={() => setSearchOpen(true)}
+              >
+                <SearchIcon className="size-3 shrink-0" />
+                Older than 7 days…
+              </button>
+            )}
+          </div>
         </div>
       ) : null}
     </SidebarGroup>

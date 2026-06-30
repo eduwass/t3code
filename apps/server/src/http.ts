@@ -289,6 +289,31 @@ export const externalImportStatusRouteLayer = HttpRouter.add(
   ),
 );
 
+/**
+ * GET /api/external-sessions/search?q=… — full-text search across ALL external
+ * sessions (the slow path beyond the warm 7-day cache), for the AGENTSVIEW
+ * "Older than 7 days…" affordance. Returns a flat, recent-first row list.
+ */
+export const externalSessionsSearchRouteLayer = HttpRouter.add(
+  "GET",
+  "/api/external-sessions/search",
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    const query = Option.isSome(url) ? (url.value.searchParams.get("q") ?? "") : "";
+    const recent = yield* RecentExternalSessions.RecentExternalSessions;
+    const sessions = yield* recent.search(query);
+    return HttpServerResponse.jsonUnsafe({ sessions });
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
 export const assetRouteLayer = HttpRouter.add(
   "GET",
   `${ASSET_ROUTE_PREFIX}/*`,

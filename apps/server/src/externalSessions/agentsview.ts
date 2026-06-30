@@ -44,3 +44,9 @@ export function agentsviewListUrl(params: Record<string, string>): string | unde
   const search = new URLSearchParams(params).toString();
   return agentsviewUrl("/api/v1/sessions", search);
 }
+
+/** Build a `/api/v1/search` full-text search URL. */
+export function agentsviewSearchUrl(params: Record<string, string>): string | undefined {
+  const search = new URLSearchParams(params).toString();
+  return agentsviewUrl("/api/v1/search", search);
+}

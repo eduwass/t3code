@@ -748,6 +748,7 @@ const buildAppUnderTest = (options?: {
           Layer.succeed(RecentExternalSessions.RecentExternalSessions, {
             get: Effect.succeed({ groups: [], updatedAt: null, available: false }),
             refresh: Effect.void,
+            search: () => Effect.succeed([]),
           }),
           // Required by the resume + import-status routes.
           Layer.succeed(ExternalImportStatus.ExternalImportStatus, {

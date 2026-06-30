@@ -24,12 +24,17 @@ import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import { HttpClient } from "effect/unstable/http";
 
-import { agentsviewListUrl, SUPPORTED_EXTERNAL_PROVIDERS } from "./agentsview.ts";
+import {
+  agentsviewListUrl,
+  agentsviewSearchUrl,
+  SUPPORTED_EXTERNAL_PROVIDERS,
+} from "./agentsview.ts";
 
 const WINDOW_DAYS = 7;
 const REFRESH_INTERVAL = Duration.seconds(30);
 const FETCH_LIMIT = 200;
 const MAX_PER_PROJECT = 12;
+const SEARCH_LIMIT = 50;
 const AGENTSVIEW_TIMEOUT = "5 seconds";
 
 const SUPPORTED = new Set<string>(SUPPORTED_EXTERNAL_PROVIDERS);
@@ -66,6 +71,8 @@ export class RecentExternalSessions extends Context.Service<
     readonly get: Effect.Effect<RecentExternalSessionsSnapshot>;
     /** Force a refresh now (also runs automatically in the background). */
     readonly refresh: Effect.Effect<void>;
+    /** Full-text search across all sessions (slow path, beyond the 7-day cache). */
+    readonly search: (query: string) => Effect.Effect<ReadonlyArray<ExternalSessionRow>>;
   }
 >()("t3/externalSessions/RecentExternalSessions") {}
 
@@ -97,6 +104,34 @@ function toRow(entry: unknown): ExternalSessionRow | undefined {
     lastActiveAt,
     messageCount: typeof record.message_count === "number" ? record.message_count : 0,
     isTeammate: record.is_teammate === true,
+  };
+}
+
+/** Map an agentsview `/api/v1/search` result row to a session row. */
+function searchResultToRow(entry: unknown): ExternalSessionRow | undefined {
+  if (!entry || typeof entry !== "object") return undefined;
+  const record = entry as Record<string, unknown>;
+  const agent = typeof record.agent === "string" ? record.agent : "";
+  if (!SUPPORTED.has(agent)) return undefined;
+  const sessionId = typeof record.session_id === "string" ? record.session_id : "";
+  const nativeId = sessionId.includes(":")
+    ? sessionId.slice(sessionId.indexOf(":") + 1)
+    : sessionId;
+  if (nativeId.length === 0) return undefined;
+  return {
+    provider: agent,
+    nativeId,
+    title: typeof record.name === "string" ? record.name : "",
+    project:
+      typeof record.project === "string" && record.project.length > 0
+        ? record.project
+        : "(unknown)",
+    agent,
+    machine: "",
+    lastActiveAt: typeof record.session_ended_at === "string" ? record.session_ended_at : "",
+    // Search results carry a match ordinal, not a reliable total — omit count.
+    messageCount: 0,
+    isTeammate: false,
   };
 }
 
@@ -145,10 +180,31 @@ const make = Effect.gen(function* () {
     Effect.catchCause(() => Ref.update(cache, (prev) => ({ ...prev, available: false }))),
   );
 
+  // Full-text search across all sessions (the slow path, beyond the warm 7-day
+  // window). Returns a flat, supported-provider, recent-first row list. Any
+  // failure yields an empty list — search is best-effort.
+  const search = (query: string) =>
+    Effect.gen(function* () {
+      const trimmed = query.trim();
+      if (trimmed.length === 0) return [] as ReadonlyArray<ExternalSessionRow>;
+      const url = agentsviewSearchUrl({ q: trimmed, limit: String(SEARCH_LIMIT) });
+      if (url === undefined) return [] as ReadonlyArray<ExternalSessionRow>;
+      const response = yield* httpClient.get(url).pipe(Effect.timeout(AGENTSVIEW_TIMEOUT));
+      if (response.status !== 200) return [] as ReadonlyArray<ExternalSessionRow>;
+      const raw = (yield* response.json) as { readonly results?: ReadonlyArray<unknown> };
+      const results = Array.isArray(raw.results) ? raw.results : [];
+      const rows: Array<ExternalSessionRow> = [];
+      for (const entry of results) {
+        const row = searchResultToRow(entry);
+        if (row !== undefined) rows.push(row);
+      }
+      return rows;
+    }).pipe(Effect.catchCause(() => Effect.succeed([] as ReadonlyArray<ExternalSessionRow>)));
+
   // Warm immediately, then refresh on a fixed cadence for the session lifetime.
   yield* Effect.forkScoped(refresh.pipe(Effect.repeat(Schedule.spaced(REFRESH_INTERVAL))));
 
-  return { get: Ref.get(cache), refresh } as const;
+  return { get: Ref.get(cache), refresh, search } as const;
 });
 
 export const layer = Layer.effect(RecentExternalSessions, make);
