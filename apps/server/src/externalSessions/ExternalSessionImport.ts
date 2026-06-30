@@ -114,8 +114,8 @@ const AgentsviewSessionSchema = Schema.Struct({
 });
 const decodeAgentsviewSession = Schema.decodeUnknownEffect(AgentsviewSessionSchema);
 
-/** Build the agentsview request URL, enforcing a loopback-only daemon. */
-function agentsviewSessionUrl(agentsviewId: string): string | undefined {
+/** Build an agentsview request URL, enforcing a loopback-only daemon. */
+function agentsviewUrl(pathname: string, search?: string): string | undefined {
   let base: URL;
   try {
     base = new URL(AGENTSVIEW_BASE_URL);
@@ -125,10 +125,14 @@ function agentsviewSessionUrl(agentsviewId: string): string | undefined {
   if (!LOOPBACK_HOSTNAMES.has(base.hostname)) {
     return undefined;
   }
-  base.pathname = `/api/v1/sessions/${encodeURIComponent(agentsviewId)}`;
-  base.search = "";
+  base.pathname = pathname;
+  base.search = search ?? "";
   base.hash = "";
   return base.toString();
+}
+
+function agentsviewSessionUrl(agentsviewId: string): string | undefined {
+  return agentsviewUrl(`/api/v1/sessions/${encodeURIComponent(agentsviewId)}`);
 }
 
 /** UUIDv5-shaped id derived from a namespace key, for stable derived ids. */
@@ -230,7 +234,49 @@ const fetchAgentsviewSession = (agentsviewId: string, expectedAgent: string) =>
     return session;
   });
 
-const resolveModelSelection = (instanceId: ProviderInstanceId) =>
+/**
+ * Best-effort lookup of the model the native session actually used, via
+ * agentsview message metadata. Used as the preferred resume model so we don't
+ * default a resumed session onto an unrelated (or gated) model. Any failure
+ * yields undefined — the model is only a default and must never block import.
+ */
+const fetchSessionModel = (agentsviewId: string) =>
+  Effect.gen(function* () {
+    const url = agentsviewUrl(
+      `/api/v1/sessions/${encodeURIComponent(agentsviewId)}/messages`,
+      "limit=40",
+    );
+    if (url === undefined) return undefined;
+    const httpClient = yield* HttpClient.HttpClient;
+    const response = yield* httpClient.get(url).pipe(Effect.timeout(AGENTSVIEW_TIMEOUT));
+    if (response.status !== 200) return undefined;
+    const raw = (yield* response.json) as { readonly messages?: ReadonlyArray<unknown> };
+    const messages = Array.isArray(raw.messages) ? raw.messages : [];
+    const counts = new Map<string, number>();
+    for (const message of messages) {
+      const model =
+        message &&
+        typeof message === "object" &&
+        typeof (message as { model?: unknown }).model === "string"
+          ? (message as { model: string }).model.trim()
+          : "";
+      if (model.length > 0) counts.set(model, (counts.get(model) ?? 0) + 1);
+    }
+    let best: string | undefined;
+    let bestCount = 0;
+    for (const [model, count] of counts) {
+      if (count > bestCount) {
+        best = model;
+        bestCount = count;
+      }
+    }
+    return best;
+  }).pipe(Effect.catchCause(() => Effect.succeed(undefined)));
+
+const resolveModelSelection = (
+  instanceId: ProviderInstanceId,
+  preferredModel: string | undefined,
+) =>
   Effect.gen(function* () {
     const registry = yield* ProviderInstanceRegistry;
     const instance = yield* registry.getInstance(instanceId);
@@ -240,10 +286,14 @@ const resolveModelSelection = (instanceId: ProviderInstanceId) =>
       });
     }
     const snapshot = yield* instance.snapshot.getSnapshot;
-    // ponytail: first listed model is a reasonable default; resume continues
-    // with the native session's own model regardless. Upgrade: use the
-    // instance's configured default model selection when one is exposed.
-    const model = snapshot.models[0]?.slug ?? DEFAULT_MODEL;
+    const availableSlugs = new Set(snapshot.models.map((m) => m.slug));
+    // Prefer the model the session actually used (when the instance still
+    // offers it); otherwise fall back to the instance's first listed model.
+    // The user can always switch models in the composer afterwards.
+    const model =
+      preferredModel && availableSlugs.has(preferredModel)
+        ? preferredModel
+        : (snapshot.models[0]?.slug ?? DEFAULT_MODEL);
     const selection: ModelSelection = { instanceId, model };
     return selection;
   });
@@ -365,7 +415,8 @@ export const importExternalSession = (input: {
 
     const driver = ProviderDriverKind.make(mapping.driver);
     const instanceId = defaultInstanceIdForDriver(driver);
-    const modelSelection = yield* resolveModelSelection(instanceId);
+    const preferredModel = yield* fetchSessionModel(mapping.agentsviewId(nativeId));
+    const modelSelection = yield* resolveModelSelection(instanceId, preferredModel);
 
     // Create the thread only if it doesn't already exist (self-repair: a prior
     // run may have created the thread but failed before binding, or the thread
