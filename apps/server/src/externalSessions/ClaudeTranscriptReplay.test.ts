@@ -215,6 +215,43 @@ describe("claudeTranscriptToReplay", () => {
       }),
     );
 
+    it.effect("a synthetic message between bursts splits the turn (no idle merge)", () =>
+      Effect.gen(function* () {
+        const lines: ReadonlyArray<unknown> = [
+          {
+            type: "user",
+            uuid: "u1",
+            timestamp: "2026-06-18T10:00:00.000Z",
+            message: { role: "user", content: "go" },
+          },
+          {
+            type: "assistant",
+            uuid: "a1",
+            timestamp: "2026-06-18T10:00:01.000Z",
+            message: { role: "assistant", content: [{ type: "text", text: "first" }] },
+          },
+          // Harness notification — NOT a human prompt, but still ends the burst.
+          {
+            type: "user",
+            uuid: "x1",
+            timestamp: "2026-06-18T10:00:02.000Z",
+            message: { role: "user", content: "<task-notification>done</task-notification>" },
+          },
+          // Next burst 12 days later must be its OWN turn, not merged.
+          {
+            type: "assistant",
+            uuid: "a2",
+            timestamp: "2026-06-30T10:00:00.000Z",
+            message: { role: "assistant", content: [{ type: "text", text: "second" }] },
+          },
+        ];
+        const { events } = yield* claudeTranscriptToReplay({ lines, threadId });
+        const started = events.filter((e) => e.type === "turn.started").length;
+        // Two distinct bursts -> two turns (not one spanning the 12-day gap).
+        assert.equal(started, 2);
+      }),
+    );
+
     it.effect("emits only a settle event for an empty transcript", () =>
       Effect.gen(function* () {
         const { events, userPrompts } = yield* claudeTranscriptToReplay({ lines: [], threadId });
