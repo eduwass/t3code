@@ -72,6 +72,29 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/**
+ * Harness-injected synthetic "user" turns: background-task notifications,
+ * system reminders and local-command echoes that the agent runtime records as
+ * user messages. They open with a recognizable wrapper tag and are not human
+ * prompts, so they are excluded from the imported conversation.
+ */
+const SYNTHETIC_USER_PREFIXES = [
+  "<task-notification>",
+  "<system-reminder>",
+  "<local-command-stdout>",
+  "<local-command-caveat>",
+  "<command-name>",
+  "<command-message>",
+  "<command-args>",
+  "<bash-input>",
+  "<bash-stdout>",
+  "<bash-stderr>",
+] as const;
+
+function isSyntheticUserPrompt(text: string): boolean {
+  return SYNTHETIC_USER_PREFIXES.some((prefix) => text.startsWith(prefix));
+}
+
 function asBlocks(message: TranscriptLine["message"]): ReadonlyArray<ContentBlock> {
   const content = message?.content;
   return Array.isArray(content) ? (content as ReadonlyArray<ContentBlock>) : [];
@@ -249,7 +272,11 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
                 .join("")
             : "";
       const trimmedPrompt = promptText.trim();
-      if (trimmedPrompt.length > 0) {
+      // Skip harness-injected synthetic turns (background-task notifications,
+      // system reminders, local-command echoes). They are recorded as user
+      // messages but are not human prompts — backfilling them renders as noise
+      // bubbles, and they must not close an assistant burst mid-turn.
+      if (trimmedPrompt.length > 0 && !isSyntheticUserPrompt(trimmedPrompt)) {
         yield* closeTurn(createdAt);
         userPrompts.push({ text: trimmedPrompt, createdAt });
       }

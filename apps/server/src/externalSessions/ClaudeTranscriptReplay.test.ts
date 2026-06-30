@@ -123,6 +123,37 @@ describe("claudeTranscriptToReplay", () => {
       }),
     );
 
+    it.effect("drops harness-injected synthetic user turns", () =>
+      Effect.gen(function* () {
+        const lines: ReadonlyArray<unknown> = [
+          {
+            type: "user",
+            uuid: "u1",
+            timestamp: "2026-06-30T17:31:30.000Z",
+            message: { role: "user", content: "real human prompt" },
+          },
+          {
+            type: "user",
+            uuid: "u2",
+            timestamp: "2026-06-30T17:31:31.000Z",
+            message: {
+              role: "user",
+              content: "<task-notification>\n<task-id>abc</task-id>\nBackground command completed",
+            },
+          },
+          {
+            type: "user",
+            uuid: "u3",
+            timestamp: "2026-06-30T17:31:32.000Z",
+            message: { role: "user", content: "<system-reminder>do this</system-reminder>" },
+          },
+        ];
+        const { userPrompts } = yield* claudeTranscriptToReplay({ lines, threadId });
+        assert.equal(userPrompts.length, 1);
+        assert.equal(userPrompts[0]!.text, "real human prompt");
+      }),
+    );
+
     it.effect("is empty for an empty transcript", () =>
       Effect.gen(function* () {
         const { events, userPrompts } = yield* claudeTranscriptToReplay({ lines: [], threadId });
