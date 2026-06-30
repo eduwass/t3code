@@ -467,6 +467,7 @@ export function projectEvent(
                 id: message.messageId,
                 role: message.role,
                 text: message.text,
+                ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
                 turnId: null,
                 streaming: false,
                 createdAt: message.createdAt,

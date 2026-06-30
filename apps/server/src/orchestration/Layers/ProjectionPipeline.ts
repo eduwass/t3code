@@ -863,12 +863,19 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                 if (Option.isSome(existing)) {
                   return;
                 }
+                const attachments =
+                  message.attachments !== undefined && message.attachments.length > 0
+                    ? yield* materializeAttachmentsForProjection({
+                        attachments: message.attachments,
+                      })
+                    : undefined;
                 yield* projectionThreadMessageRepository.upsert({
                   messageId: message.messageId,
                   threadId: event.payload.threadId,
                   turnId: null,
                   role: message.role,
                   text: message.text,
+                  ...(attachments !== undefined ? { attachments: [...attachments] } : {}),
                   isStreaming: false,
                   createdAt: message.createdAt,
                   updatedAt: message.createdAt,

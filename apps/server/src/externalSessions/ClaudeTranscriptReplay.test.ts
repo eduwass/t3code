@@ -154,6 +154,37 @@ describe("claudeTranscriptToReplay", () => {
       }),
     );
 
+    it.effect("extracts image refs and strips image markers from prompt text", () =>
+      Effect.gen(function* () {
+        const lines: ReadonlyArray<unknown> = [
+          {
+            type: "user",
+            uuid: "u1",
+            timestamp: "2026-06-30T17:31:30.000Z",
+            message: {
+              role: "user",
+              content: [
+                { type: "text", text: "[Image #1] look at this" },
+                { type: "text", text: "[Image: source: /home/x/.claude/image-cache/s/1.png]" },
+                {
+                  type: "image",
+                  source: { type: "base64", media_type: "image/jpeg", data: "AAAA" },
+                },
+              ],
+            },
+          },
+        ];
+        const { userPrompts } = yield* claudeTranscriptToReplay({ lines, threadId });
+        assert.equal(userPrompts.length, 1);
+        // [Image #1] marker stripped, real text kept.
+        assert.equal(userPrompts[0]!.text, "look at this");
+        // Placeholder path preferred over inline base64 (original quality).
+        assert.equal(userPrompts[0]!.images.length, 1);
+        assert.equal(userPrompts[0]!.images[0]!.sourcePath, "/home/x/.claude/image-cache/s/1.png");
+        assert.equal(userPrompts[0]!.images[0]!.mimeType, "image/png");
+      }),
+    );
+
     it.effect("is empty for an empty transcript", () =>
       Effect.gen(function* () {
         const { events, userPrompts } = yield* claudeTranscriptToReplay({ lines: [], threadId });

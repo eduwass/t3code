@@ -24,6 +24,8 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeOS from "node:os";
 
 import {
+  type ChatAttachment,
+  ChatImageAttachment,
   CommandId,
   defaultInstanceIdForDriver,
   DEFAULT_MODEL,
@@ -53,8 +55,10 @@ import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSn
 import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
 import { ProviderService } from "../provider/Services/ProviderService.ts";
 import { ProviderSessionDirectory } from "../provider/Services/ProviderSessionDirectory.ts";
+import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
+import { ServerConfig } from "../config.ts";
 import { WorkspacePaths } from "../workspace/WorkspacePaths.ts";
-import { claudeTranscriptToReplay } from "./ClaudeTranscriptReplay.ts";
+import { claudeTranscriptToReplay, type ReplayImageRef } from "./ClaudeTranscriptReplay.ts";
 
 /**
  * Per-provider mapping from the URL `provider` token to:
@@ -395,6 +399,58 @@ const readClaudeTranscriptLines = (nativeId: string) =>
     return [] as Array<unknown>;
   }).pipe(Effect.orElseSucceed(() => [] as Array<unknown>));
 
+const decodeImageAttachment = Schema.decodeUnknownExit(ChatImageAttachment);
+
+/**
+ * Persist transcript image references as T3 attachments and return the
+ * ChatAttachments to hang on a backfilled message. Best-effort per image: a
+ * missing/oversized/unreadable image is skipped, never fatal — the conversation
+ * still imports without it.
+ */
+const persistReplayImages = (input: {
+  readonly threadId: ThreadId;
+  readonly attachmentsDir: string;
+  readonly images: ReadonlyArray<ReplayImageRef>;
+}) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const out: Array<ChatAttachment> = [];
+    for (const ref of input.images) {
+      const bytes = ref.sourcePath
+        ? yield* fileSystem.readFile(ref.sourcePath).pipe(Effect.option)
+        : ref.base64
+          ? Option.some<Uint8Array>(Buffer.from(ref.base64, "base64"))
+          : Option.none<Uint8Array>();
+      if (Option.isNone(bytes) || bytes.value.byteLength === 0) continue;
+      const id = createAttachmentId(input.threadId);
+      if (!id) continue;
+      const name =
+        (ref.sourcePath ? path.basename(ref.sourcePath) : "pasted-image").slice(0, 255) || "image";
+      // Decode validates id/mime/name/size (incl. the 10 MB ceiling) and brands
+      // the attachment; an invalid/oversized image is simply skipped.
+      const decoded = decodeImageAttachment({
+        type: "image",
+        id,
+        name,
+        mimeType: ref.mimeType,
+        sizeBytes: bytes.value.byteLength,
+      });
+      if (!Exit.isSuccess(decoded)) continue;
+      const dest = resolveAttachmentPath({
+        attachmentsDir: input.attachmentsDir,
+        attachment: decoded.value,
+      });
+      if (!dest) continue;
+      const written = yield* fileSystem.writeFile(dest, bytes.value).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+      );
+      if (written) out.push(decoded.value);
+    }
+    return out;
+  });
+
 /** Resolve (find or deterministically create) the project owning `cwd`. */
 const resolveProjectId = (workspaceRoot: string, modelSelection: ModelSelection) =>
   Effect.gen(function* () {
@@ -471,6 +527,7 @@ export const importExternalSession = (input: {
     const engine = yield* OrchestrationEngineService;
     const workspacePaths = yield* WorkspacePaths;
     const providerService = yield* ProviderService;
+    const serverConfig = yield* ServerConfig;
     const crypto = yield* Crypto.Crypto;
     const threadId = ThreadId.make(deterministicThreadId(mapping.driver, nativeId));
 
@@ -583,12 +640,26 @@ export const importExternalSession = (input: {
         const lines = yield* readClaudeTranscriptLines(nativeId);
         if (lines.length > 0) {
           const replay = yield* claudeTranscriptToReplay({ lines, threadId });
-          const messages: Array<ThreadHistoryBackfillMessage> = replay.userPrompts.map((p, i) => ({
-            messageId: MessageId.make(deterministicUuid(`t3-resume-msg:${nativeId}:user:${i}`)),
-            role: "user" as OrchestrationMessageRole,
-            text: p.text,
-            createdAt: p.createdAt,
-          }));
+          const messages: Array<ThreadHistoryBackfillMessage> = yield* Effect.forEach(
+            replay.userPrompts,
+            (p, i) =>
+              persistReplayImages({
+                threadId,
+                attachmentsDir: serverConfig.attachmentsDir,
+                images: p.images,
+              }).pipe(
+                Effect.map((attachments) => ({
+                  messageId: MessageId.make(
+                    deterministicUuid(`t3-resume-msg:${nativeId}:user:${i}`),
+                  ),
+                  role: "user" as OrchestrationMessageRole,
+                  text: p.text,
+                  createdAt: p.createdAt,
+                  ...(attachments.length > 0 ? { attachments } : {}),
+                })),
+              ),
+            { concurrency: 4 },
+          );
           if (messages.length > 0) {
             yield* engine
               .dispatch({
