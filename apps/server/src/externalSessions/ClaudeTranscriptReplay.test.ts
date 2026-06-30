@@ -44,15 +44,20 @@ const LINES: ReadonlyArray<unknown> = [
 
 describe("claudeTranscriptToReplay", () => {
   it.layer(NodeServices.layer)("transcript replay", (it) => {
-    it.effect("splits human prompts from assistant runtime events", () =>
+    it.effect("backfills user prompts AND assistant text as messages", () =>
       Effect.gen(function* () {
-        const { userPrompts } = yield* claudeTranscriptToReplay({ lines: LINES, threadId });
-        assert.equal(userPrompts.length, 1);
-        assert.equal(userPrompts[0]!.text, "do the thing");
+        const { messages } = yield* claudeTranscriptToReplay({ lines: LINES, threadId });
+        const user = messages.filter((m) => m.role === "user");
+        const assistant = messages.filter((m) => m.role === "assistant");
+        assert.equal(user.length, 1);
+        assert.equal(user[0]!.text, "do the thing");
+        // Assistant text goes through the reliable backfill path, not a delta.
+        assert.equal(assistant.length, 1);
+        assert.equal(assistant[0]!.text, "on it");
       }),
     );
 
-    it.effect("maps assistant text, thinking, tool call + output to canonical events", () =>
+    it.effect("maps thinking, tool call + output to runtime events", () =>
       Effect.gen(function* () {
         const { events } = yield* claudeTranscriptToReplay({ lines: LINES, threadId });
         const types = new Set(events.map((e) => e.type));
@@ -74,18 +79,18 @@ describe("claudeTranscriptToReplay", () => {
         const completed = events.find((e) => e.type === "item.completed");
         assert.equal(payloadOf(completed).status, "completed");
 
-        // Reasoning + assistant text both surface as content deltas.
+        // Reasoning still flows as a content delta; assistant text does NOT.
         assert.isTrue(
           events.some(
             (e) => e.type === "content.delta" && payloadOf(e).streamKind === "reasoning_text",
           ),
           "thinking block becomes reasoning_text",
         );
-        assert.isTrue(
+        assert.isFalse(
           events.some(
             (e) => e.type === "content.delta" && payloadOf(e).streamKind === "assistant_text",
           ),
-          "text block becomes assistant_text",
+          "assistant text is a backfilled message, not a delta",
         );
       }),
     );
@@ -148,7 +153,8 @@ describe("claudeTranscriptToReplay", () => {
             message: { role: "user", content: "<system-reminder>do this</system-reminder>" },
           },
         ];
-        const { userPrompts } = yield* claudeTranscriptToReplay({ lines, threadId });
+        const { messages } = yield* claudeTranscriptToReplay({ lines, threadId });
+        const userPrompts = messages.filter((m) => m.role === "user");
         assert.equal(userPrompts.length, 1);
         assert.equal(userPrompts[0]!.text, "real human prompt");
       }),
@@ -174,7 +180,8 @@ describe("claudeTranscriptToReplay", () => {
             },
           },
         ];
-        const { userPrompts } = yield* claudeTranscriptToReplay({ lines, threadId });
+        const { messages } = yield* claudeTranscriptToReplay({ lines, threadId });
+        const userPrompts = messages.filter((m) => m.role === "user");
         assert.equal(userPrompts.length, 1);
         // [Image #1] marker stripped, real text kept.
         assert.equal(userPrompts[0]!.text, "look at this");
@@ -254,9 +261,9 @@ describe("claudeTranscriptToReplay", () => {
 
     it.effect("emits only a settle event for an empty transcript", () =>
       Effect.gen(function* () {
-        const { events, userPrompts } = yield* claudeTranscriptToReplay({ lines: [], threadId });
+        const { events, messages } = yield* claudeTranscriptToReplay({ lines: [], threadId });
         // No conversation, but the thread must still settle to "stopped".
-        assert.equal(userPrompts.length, 0);
+        assert.equal(messages.length, 0);
         assert.deepEqual(
           events.map((e) => e.type),
           ["session.exited"],

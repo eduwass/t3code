@@ -48,10 +48,18 @@ export interface ReplayImageRef {
   readonly mimeType: string;
 }
 
-/** A recorded human prompt to be backfilled as a user message. */
-export interface ReplayUserPrompt {
+/**
+ * A recorded conversational message to backfill. BOTH user prompts and
+ * assistant text go through history backfill (a direct, idempotent dispatch),
+ * not the runtime-event bus — the bus buffers assistant deltas and flushes them
+ * only on turn/request boundaries, which is unreliable for an incremental sync.
+ * Tool calls and reasoning still flow as runtime events (they render as
+ * activities, which dispatch directly).
+ */
+export interface ReplayMessage {
   /** Source transcript line uuid — stable, unique id for idempotent backfill. */
   readonly uuid: string;
+  readonly role: "user" | "assistant";
   readonly text: string;
   readonly createdAt: IsoDateTime;
   readonly images: ReadonlyArray<ReplayImageRef>;
@@ -59,7 +67,7 @@ export interface ReplayUserPrompt {
 
 export interface ClaudeTranscriptReplay {
   readonly events: ReadonlyArray<ProviderRuntimeEvent>;
-  readonly userPrompts: ReadonlyArray<ReplayUserPrompt>;
+  readonly messages: ReadonlyArray<ReplayMessage>;
 }
 
 /** Minimal view of a transcript line (`~/.claude/.../<id>.jsonl`). */
@@ -240,7 +248,7 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
   const { threadId } = input;
 
   const events: ProviderRuntimeEvent[] = [];
-  const userPrompts: ReplayUserPrompt[] = [];
+  const messages: ReplayMessage[] = [];
   const toolItemTypeById = new Map<string, CanonicalItemType>();
 
   let currentTurnId: TurnId | undefined;
@@ -373,8 +381,9 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
       if (isUserMessage) {
         yield* closeTurn();
         if (!isSyntheticUserPrompt(trimmedPrompt)) {
-          userPrompts.push({
+          messages.push({
             uuid: messageUuid,
+            role: "user",
             text: trimmedPrompt,
             createdAt,
             images: human.images,
@@ -386,19 +395,16 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
 
     if (lineType === "assistant") {
       yield* openTurn(createdAt);
+      const assistantTextParts: string[] = [];
       let blockIndex = 0;
       for (const block of blocks) {
         const blockType = asString(block.type);
         if (blockType === "text") {
-          // Distinct id per block: text segments around a tool call are separate
-          // messages, otherwise the assistant buffer concatenates them with no
-          // separator ("…guess.## What …").
-          yield* pushContentDelta(
-            createdAt,
-            `${messageUuid}:text:${blockIndex}`,
-            "assistant_text",
-            asString(block.text) ?? "",
-          );
+          // Assistant text is backfilled as a message (reliable, idempotent),
+          // NOT a runtime delta (which the ingestion buffers unreliably). One
+          // message per assistant line; blocks joined so they don't glue.
+          const text = asString(block.text);
+          if (text) assistantTextParts.push(text);
         } else if (blockType === "thinking") {
           yield* pushContentDelta(
             createdAt,
@@ -435,6 +441,15 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
         }
         blockIndex += 1;
       }
+      if (assistantTextParts.length > 0) {
+        messages.push({
+          uuid: messageUuid,
+          role: "assistant",
+          text: assistantTextParts.join("\n\n"),
+          createdAt,
+          images: [],
+        });
+      }
     }
     // Other line types (system, summary, attachment, queue-operation,
     // last-prompt) carry no renderable conversation content — skip them.
@@ -460,5 +475,5 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
     } as ProviderRuntimeEvent);
   }
 
-  return { events, userPrompts };
+  return { events, messages };
 });

@@ -484,20 +484,22 @@ const hydrateClaudeTail = (input: {
     const newLines = lines.slice(input.fromLine);
     const replay = yield* claudeTranscriptToReplay({ lines: newLines, threadId: input.threadId });
     const messages: Array<ThreadHistoryBackfillMessage> = yield* Effect.forEach(
-      replay.userPrompts,
-      (p) =>
+      replay.messages,
+      (m) =>
         persistReplayImages({
           threadId: input.threadId,
           attachmentsDir: serverConfig.attachmentsDir,
-          images: p.images,
+          images: m.images,
         }).pipe(
           Effect.map((attachments) => ({
+            // Keyed by the source line uuid (unique per line) so re-sync is
+            // idempotent for both user and assistant messages.
             messageId: MessageId.make(
-              deterministicUuid(`t3-resume-msg:${input.nativeId}:${p.uuid}`),
+              deterministicUuid(`t3-resume-msg:${input.nativeId}:${m.uuid}`),
             ),
-            role: "user" as OrchestrationMessageRole,
-            text: p.text,
-            createdAt: p.createdAt,
+            role: m.role as OrchestrationMessageRole,
+            text: m.text,
+            createdAt: m.createdAt,
             ...(attachments.length > 0 ? { attachments } : {}),
           })),
         ),
