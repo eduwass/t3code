@@ -185,11 +185,15 @@ describe("claudeTranscriptToReplay", () => {
       }),
     );
 
-    it.effect("is empty for an empty transcript", () =>
+    it.effect("emits only a settle event for an empty transcript", () =>
       Effect.gen(function* () {
         const { events, userPrompts } = yield* claudeTranscriptToReplay({ lines: [], threadId });
-        assert.equal(events.length, 0);
+        // No conversation, but the thread must still settle to "stopped".
         assert.equal(userPrompts.length, 0);
+        assert.deepEqual(
+          events.map((e) => e.type),
+          ["session.exited"],
+        );
       }),
     );
   });
