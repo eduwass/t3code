@@ -50,6 +50,8 @@ export interface ReplayImageRef {
 
 /** A recorded human prompt to be backfilled as a user message. */
 export interface ReplayUserPrompt {
+  /** Source transcript line uuid — stable, unique id for idempotent backfill. */
+  readonly uuid: string;
   readonly text: string;
   readonly createdAt: IsoDateTime;
   readonly images: ReadonlyArray<ReplayImageRef>;
@@ -371,7 +373,12 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
       if (isUserMessage) {
         yield* closeTurn();
         if (!isSyntheticUserPrompt(trimmedPrompt)) {
-          userPrompts.push({ text: trimmedPrompt, createdAt, images: human.images });
+          userPrompts.push({
+            uuid: messageUuid,
+            text: trimmedPrompt,
+            createdAt,
+            images: human.images,
+          });
         }
       }
       continue;

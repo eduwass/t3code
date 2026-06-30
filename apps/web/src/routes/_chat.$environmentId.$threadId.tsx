@@ -8,6 +8,7 @@ import { resolveThreadRouteRef } from "../threadRoutes";
 import { SidebarInset } from "~/components/ui/sidebar";
 import { useEnvironmentThreadRefs, useThreadDetail, useThreadShell } from "../state/entities";
 import { useExternalImportStatus } from "../state/useExternalImportStatus";
+import { useExternalSessionSync } from "../state/useExternalSessionSync";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
 
@@ -57,6 +58,10 @@ function ChatThreadRouteView() {
     }
     finalizePromotedDraftThreadByRef(threadRef);
   }, [draftThread, serverThreadStarted, threadRef]);
+
+  // Keep an imported thread in sync with its on-disk transcript (e.g. work done
+  // via the CLI) while it's open. No-op for non-imported threads.
+  useExternalSessionSync(threadRef?.threadId ?? null);
 
   if (!threadRef || !bootstrapComplete || !routeThreadExists) {
     return null;

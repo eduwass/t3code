@@ -3,6 +3,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
+  ThreadId,
 } from "@t3tools/contracts";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
 import * as Data from "effect/Data";
@@ -36,7 +37,10 @@ import {
   failEnvironmentInternal,
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
-import { importExternalSession } from "./externalSessions/ExternalSessionImport.ts";
+import {
+  importExternalSession,
+  syncExternalSession,
+} from "./externalSessions/ExternalSessionImport.ts";
 import * as ExternalImportStatus from "./externalSessions/ExternalImportStatus.ts";
 import * as RecentExternalSessions from "./externalSessions/RecentExternalSessions.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
@@ -305,6 +309,35 @@ export const externalSessionsSearchRouteLayer = HttpRouter.add(
     const recent = yield* RecentExternalSessions.RecentExternalSessions;
     const sessions = yield* recent.search(query);
     return HttpServerResponse.jsonUnsafe({ sessions });
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+/**
+ * GET /api/external-sessions/sync?threadId=… — incrementally sync an imported
+ * Claude thread with its on-disk transcript (append messages newer than the
+ * sync marker). The web polls this while such a thread is open so work done via
+ * the CLI shows up without a manual re-import. Cheap no-op when nothing changed
+ * or the thread isn't a sync-eligible import.
+ */
+export const externalSessionsSyncRouteLayer = HttpRouter.add(
+  "GET",
+  "/api/external-sessions/sync",
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    const rawThreadId = Option.isSome(url) ? (url.value.searchParams.get("threadId") ?? "") : "";
+    if (rawThreadId.trim().length === 0) {
+      return HttpServerResponse.jsonUnsafe({ synced: false, added: 0 });
+    }
+    const result = yield* syncExternalSession({ threadId: ThreadId.make(rawThreadId) });
+    return HttpServerResponse.jsonUnsafe(result);
   }).pipe(
     Effect.catchTags({
       EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,

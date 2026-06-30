@@ -54,7 +54,10 @@ import { OrchestrationEngineService } from "../orchestration/Services/Orchestrat
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
 import { ProviderService } from "../provider/Services/ProviderService.ts";
-import { ProviderSessionDirectory } from "../provider/Services/ProviderSessionDirectory.ts";
+import {
+  ProviderSessionDirectory,
+  type ProviderRuntimeBinding,
+} from "../provider/Services/ProviderSessionDirectory.ts";
 import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 import { WorkspacePaths } from "../workspace/WorkspacePaths.ts";
@@ -456,6 +459,69 @@ const persistReplayImages = (input: {
     return out;
   });
 
+/**
+ * Replay the tail of a Claude transcript (lines at/after `fromLine`) into a
+ * thread: backfill new human prompts (idempotent by line uuid) and replay new
+ * assistant/tool events. Returns the new total line count so the caller can
+ * advance its sync marker. `fromLine: 0` is a full hydrate; `fromLine: marker`
+ * is an incremental sync. Best-effort: failures leave the thread as-is.
+ */
+const hydrateClaudeTail = (input: {
+  readonly threadId: ThreadId;
+  readonly nativeId: string;
+  readonly fromLine: number;
+}) =>
+  Effect.gen(function* () {
+    const engine = yield* OrchestrationEngineService;
+    const providerService = yield* ProviderService;
+    const serverConfig = yield* ServerConfig;
+    const crypto = yield* Crypto.Crypto;
+
+    const lines = yield* readClaudeTranscriptLines(input.nativeId);
+    if (lines.length <= input.fromLine) {
+      return { total: lines.length, added: 0 };
+    }
+    const newLines = lines.slice(input.fromLine);
+    const replay = yield* claudeTranscriptToReplay({ lines: newLines, threadId: input.threadId });
+    const messages: Array<ThreadHistoryBackfillMessage> = yield* Effect.forEach(
+      replay.userPrompts,
+      (p) =>
+        persistReplayImages({
+          threadId: input.threadId,
+          attachmentsDir: serverConfig.attachmentsDir,
+          images: p.images,
+        }).pipe(
+          Effect.map((attachments) => ({
+            messageId: MessageId.make(
+              deterministicUuid(`t3-resume-msg:${input.nativeId}:${p.uuid}`),
+            ),
+            role: "user" as OrchestrationMessageRole,
+            text: p.text,
+            createdAt: p.createdAt,
+            ...(attachments.length > 0 ? { attachments } : {}),
+          })),
+        ),
+      { concurrency: 4 },
+    );
+    if (messages.length > 0) {
+      yield* engine
+        .dispatch({
+          type: "thread.history.backfill",
+          commandId: CommandId.make(yield* crypto.randomUUIDv4),
+          threadId: input.threadId,
+          messages,
+          createdAt: DateTime.formatIso(yield* DateTime.now),
+        })
+        .pipe(Effect.catchCause(() => Effect.void));
+    }
+    if (replay.events.length > 0) {
+      yield* providerService
+        .replayRuntimeEvents(replay.events)
+        .pipe(Effect.catchCause(() => Effect.void));
+    }
+    return { total: lines.length, added: messages.length + replay.events.length };
+  });
+
 /** Resolve (find or deterministically create) the project owning `cwd`. */
 const resolveProjectId = (workspaceRoot: string, modelSelection: ModelSelection) =>
   Effect.gen(function* () {
@@ -531,8 +597,6 @@ export const importExternalSession = (input: {
     const projection = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
     const engine = yield* OrchestrationEngineService;
     const workspacePaths = yield* WorkspacePaths;
-    const providerService = yield* ProviderService;
-    const serverConfig = yield* ServerConfig;
     const crypto = yield* Crypto.Crypto;
     const threadId = ThreadId.make(deterministicThreadId(mapping.driver, nativeId));
 
@@ -669,45 +733,26 @@ export const importExternalSession = (input: {
       // agentsview's pre-rendered text.
       let hydrated = false;
       if (input.provider === "claude") {
-        const lines = yield* readClaudeTranscriptLines(nativeId);
-        if (lines.length > 0) {
-          const replay = yield* claudeTranscriptToReplay({ lines, threadId });
-          const messages: Array<ThreadHistoryBackfillMessage> = yield* Effect.forEach(
-            replay.userPrompts,
-            (p, i) =>
-              persistReplayImages({
-                threadId,
-                attachmentsDir: serverConfig.attachmentsDir,
-                images: p.images,
-              }).pipe(
-                Effect.map((attachments) => ({
-                  messageId: MessageId.make(
-                    deterministicUuid(`t3-resume-msg:${nativeId}:user:${i}`),
-                  ),
-                  role: "user" as OrchestrationMessageRole,
-                  text: p.text,
-                  createdAt: p.createdAt,
-                  ...(attachments.length > 0 ? { attachments } : {}),
-                })),
-              ),
-            { concurrency: 4 },
-          );
-          if (messages.length > 0) {
-            yield* engine
-              .dispatch({
-                type: "thread.history.backfill",
-                commandId: CommandId.make(yield* crypto.randomUUIDv4),
-                threadId,
-                messages,
-                createdAt: DateTime.formatIso(yield* DateTime.now),
-              })
-              .pipe(Effect.catchCause(() => Effect.void));
-          }
-          if (replay.events.length > 0) {
-            yield* providerService
-              .replayRuntimeEvents(replay.events)
-              .pipe(Effect.catchCause(() => Effect.void));
-          }
+        const result = yield* hydrateClaudeTail({ threadId, nativeId, fromLine: 0 });
+        if (result.total > 0) {
+          // Record how far the transcript was imported so background sync can
+          // resume from here and append only newer messages.
+          yield* directory
+            .upsert({
+              threadId,
+              provider: driver,
+              providerInstanceId: instanceId,
+              runtimeMode: DEFAULT_RUNTIME_MODE,
+              status: "stopped",
+              resumeCursor: mapping.resumeCursor(nativeId),
+              runtimePayload: {
+                cwd,
+                model: modelSelection.model,
+                modelSelection,
+                syncedLineCount: result.total,
+              },
+            })
+            .pipe(Effect.catchCause(() => Effect.void));
           hydrated = true;
         }
       }
@@ -749,3 +794,71 @@ export const importExternalSession = (input: {
 
     return { threadId, alreadyImported, hydrate };
   });
+
+export interface ExternalSessionSyncResult {
+  /** Whether this thread is a sync-eligible imported Claude session. */
+  readonly synced: boolean;
+  /** Number of new prompts + replayed events appended this tick. */
+  readonly added: number;
+}
+
+/**
+ * Incrementally sync an already-imported Claude thread with its on-disk
+ * transcript: append only messages newer than the recorded sync marker (so a
+ * session worked on via the CLI after import shows its latest turns in T3),
+ * then advance the marker. Cheap when nothing changed. No-op for threads that
+ * aren't sync-eligible imports (native T3 threads, non-Claude, missing marker).
+ */
+export const syncExternalSession = (input: { readonly threadId: ThreadId }) =>
+  Effect.gen(function* () {
+    const directory = yield* ProviderSessionDirectory;
+    const bindingOpt = yield* directory
+      .getBinding(input.threadId)
+      .pipe(Effect.orElseSucceed(() => Option.none<ProviderRuntimeBinding>()));
+    if (Option.isNone(bindingOpt)) return { synced: false, added: 0 };
+    const binding = bindingOpt.value;
+    // Only Claude imports support transcript tail-sync today.
+    if (String(binding.provider) !== "claudeAgent") return { synced: false, added: 0 };
+    // Skip while T3 is itself driving this session — its live turns append to the
+    // same transcript, and re-importing them would duplicate what's already
+    // rendered. ponytail: a turn driven in T3 after sync still leaves the marker
+    // behind; the next idle tick would re-import it. Fix by advancing the marker
+    // when T3 drives an imported thread.
+    if (binding.status !== undefined && binding.status !== "stopped") {
+      return { synced: false, added: 0 };
+    }
+    const payload =
+      binding.runtimePayload &&
+      typeof binding.runtimePayload === "object" &&
+      !Array.isArray(binding.runtimePayload)
+        ? (binding.runtimePayload as Record<string, unknown>)
+        : undefined;
+    // The sync marker is set only by import — its absence means "not an imported
+    // external session", so we never sync a native T3 thread from a file.
+    if (!payload || typeof payload.syncedLineCount !== "number") {
+      return { synced: false, added: 0 };
+    }
+    const cursor =
+      binding.resumeCursor && typeof binding.resumeCursor === "object"
+        ? (binding.resumeCursor as Record<string, unknown>)
+        : undefined;
+    const nativeId = cursor && typeof cursor.resume === "string" ? cursor.resume : "";
+    if (!isValidSessionId(nativeId)) return { synced: false, added: 0 };
+
+    const marker = payload.syncedLineCount;
+    const result = yield* hydrateClaudeTail({
+      threadId: input.threadId,
+      nativeId,
+      fromLine: marker,
+    });
+    if (result.total > marker) {
+      yield* directory
+        .upsert({ ...binding, runtimePayload: { ...payload, syncedLineCount: result.total } })
+        .pipe(Effect.catchCause(() => Effect.void));
+    }
+    return { synced: true, added: result.added };
+  }).pipe(
+    Effect.catchCause(() =>
+      Effect.succeed({ synced: false, added: 0 } as ExternalSessionSyncResult),
+    ),
+  );
