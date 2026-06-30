@@ -785,6 +785,28 @@ const ThreadRevertCompleteCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+export const ThreadHistoryBackfillMessage = Schema.Struct({
+  messageId: MessageId,
+  role: OrchestrationMessageRole,
+  text: Schema.String,
+  createdAt: IsoDateTime,
+});
+export type ThreadHistoryBackfillMessage = typeof ThreadHistoryBackfillMessage.Type;
+
+/**
+ * Append completed historical messages (e.g. the transcript of an imported
+ * external session) to a thread, without running a turn or touching any
+ * provider/checkpoint machinery. Internal-only: emitted server-side during
+ * external-session import, never dispatched by clients.
+ */
+const ThreadHistoryBackfillCommand = Schema.Struct({
+  type: Schema.Literal("thread.history.backfill"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messages: Schema.Array(ThreadHistoryBackfillMessage),
+  createdAt: IsoDateTime,
+});
+
 const InternalOrchestrationCommand = Schema.Union([
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
@@ -793,6 +815,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
+  ThreadHistoryBackfillCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -814,6 +837,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
   "thread.message-sent",
+  "thread.history-backfilled",
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
   "thread.approval-response-requested",
@@ -922,6 +946,11 @@ export const ThreadMessageSentPayload = Schema.Struct({
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+});
+
+export const ThreadHistoryBackfilledPayload = Schema.Struct({
+  threadId: ThreadId,
+  messages: Schema.Array(ThreadHistoryBackfillMessage),
 });
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
@@ -1075,6 +1104,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.message-sent"),
     payload: ThreadMessageSentPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.history-backfilled"),
+    payload: ThreadHistoryBackfilledPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
