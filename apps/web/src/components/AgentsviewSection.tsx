@@ -51,6 +51,9 @@ const RANGE_OPTIONS = [
 ] as const;
 const DEFAULT_RANGE_DAYS = 7;
 
+/** Sessions shown per project before a "Show N older in <project>" reveal. */
+const PROJECT_DISPLAY_CAP = 6;
+
 const AGENT_DOT: Record<string, string> = {
   claude: "bg-blue-500",
   codex: "bg-green-500",
@@ -103,16 +106,34 @@ export function AgentsviewSection() {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [collapsedProjects, setCollapsedProjects] = useState<ReadonlySet<string>>(new Set());
+  const [expandedProjects, setExpandedProjects] = useState<ReadonlySet<string>>(new Set());
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [rangeDays, setRangeDays] = useState<number>(DEFAULT_RANGE_DAYS);
   const resumeInFlight = useRef(false);
+  const foldedSeeded = useRef(false);
   const { snapshot, errored } = useRecentExternalSessions(expanded);
+
+  // On first expand, start with every project folded — the section opens as a
+  // compact list of project headers. After that the user's toggles stick.
+  useEffect(() => {
+    if (!expanded || foldedSeeded.current || !snapshot) return;
+    foldedSeeded.current = true;
+    setCollapsedProjects(new Set(snapshot.groups.map((group) => group.project)));
+  }, [expanded, snapshot]);
 
   const toggleProject = useCallback((project: string) => {
     setCollapsedProjects((prev) => {
       const next = new Set(prev);
       if (next.has(project)) next.delete(project);
       else next.add(project);
+      return next;
+    });
+  }, []);
+
+  const revealProject = useCallback((project: string) => {
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      next.add(project);
       return next;
     });
   }, []);
@@ -236,42 +257,62 @@ export function AgentsviewSection() {
                   </button>
                   {projectCollapsed
                     ? null
-                    : group.sessions.map((row) => (
-                        <button
-                          key={`${row.provider}:${row.nativeId}`}
-                          type="button"
-                          className="flex w-full items-start gap-2 rounded-md py-1 pl-7 pr-2 text-left transition-colors hover:bg-accent disabled:opacity-50"
-                          onClick={() => void openSession(row)}
-                          disabled={resumingId === row.nativeId}
-                          title={row.title}
-                        >
-                          <span
-                            className={`mt-1.5 size-1.5 shrink-0 rounded-full ${
-                              AGENT_DOT[row.agent] ?? "bg-muted-foreground"
-                            }`}
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] text-foreground">
-                              {row.title || "Untitled session"}
-                            </span>
-                            <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
-                              <span>{formatRelativeTimeLabel(row.lastActiveAt)}</span>
-                              <span>·</span>
-                              <span className="tabular-nums">•{row.messageCount}</span>
-                              {row.isTeammate ? (
-                                <UsersRoundIcon className="size-3 text-muted-foreground/50" />
-                              ) : null}
-                            </span>
-                          </span>
-                          <span
-                            className={`mt-0.5 shrink-0 text-[9px] font-medium uppercase tracking-wide ${
-                              AGENT_TEXT[row.agent] ?? "text-muted-foreground"
-                            }`}
-                          >
-                            {row.provider}
-                          </span>
-                        </button>
-                      ))}
+                    : (() => {
+                        const showAll = expandedProjects.has(group.project);
+                        const visible = showAll
+                          ? group.sessions
+                          : group.sessions.slice(0, PROJECT_DISPLAY_CAP);
+                        const hidden = group.sessions.length - visible.length;
+                        return (
+                          <>
+                            {visible.map((row) => (
+                              <button
+                                key={`${row.provider}:${row.nativeId}`}
+                                type="button"
+                                className="flex w-full items-start gap-2 rounded-md py-1 pl-7 pr-2 text-left transition-colors hover:bg-accent disabled:opacity-50"
+                                onClick={() => void openSession(row)}
+                                disabled={resumingId === row.nativeId}
+                                title={row.title}
+                              >
+                                <span
+                                  className={`mt-1.5 size-1.5 shrink-0 rounded-full ${
+                                    AGENT_DOT[row.agent] ?? "bg-muted-foreground"
+                                  }`}
+                                />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-[13px] text-foreground">
+                                    {row.title || "Untitled session"}
+                                  </span>
+                                  <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+                                    <span>{formatRelativeTimeLabel(row.lastActiveAt)}</span>
+                                    <span>·</span>
+                                    <span className="tabular-nums">•{row.messageCount}</span>
+                                    {row.isTeammate ? (
+                                      <UsersRoundIcon className="size-3 text-muted-foreground/50" />
+                                    ) : null}
+                                  </span>
+                                </span>
+                                <span
+                                  className={`mt-0.5 shrink-0 text-[9px] font-medium uppercase tracking-wide ${
+                                    AGENT_TEXT[row.agent] ?? "text-muted-foreground"
+                                  }`}
+                                >
+                                  {row.provider}
+                                </span>
+                              </button>
+                            ))}
+                            {hidden > 0 ? (
+                              <button
+                                type="button"
+                                className="w-full rounded-md py-1 pl-7 pr-2 text-left text-[11px] text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+                                onClick={() => revealProject(group.project)}
+                              >
+                                Show {hidden} older in {group.project}
+                              </button>
+                            ) : null}
+                          </>
+                        );
+                      })()}
                 </div>
               );
             })
