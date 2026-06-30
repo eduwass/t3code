@@ -555,9 +555,11 @@ export const importExternalSession = (input: {
           (cause) => new ExternalSessionImportError({ reason: "Failed to read thread.", cause }),
         ),
       );
-    if (Option.isSome(existingBinding) && Option.isSome(existingThread)) {
-      return { threadId, alreadyImported: true } satisfies ExternalSessionImportResult;
-    }
+    // Re-import is intentionally NOT a no-op: re-opening from the agentsview
+    // dropdown rebuilds the thread from the current transcript so earlier
+    // import bugs / partial state are corrected. `alreadyImported` reports
+    // whether the thread pre-existed (the thread was refreshed in place).
+    const alreadyImported = Option.isSome(existingBinding) && Option.isSome(existingThread);
 
     const meta = yield* fetchAgentsviewSession(mapping.agentsviewId(nativeId), input.provider);
 
@@ -629,10 +631,32 @@ export const importExternalSession = (input: {
             ),
           ),
         );
+    } else {
+      // Re-import of an existing thread: unarchive it (if archived) and wipe its
+      // content so a stale/partial prior import is rebuilt from scratch below.
+      // ponytail: this also discards any T3-native turns the user added to an
+      // imported thread — re-import is treated as "refresh from source".
+      yield* engine
+        .dispatch({
+          type: "thread.unarchive",
+          commandId: CommandId.make(yield* crypto.randomUUIDv4),
+          threadId,
+        })
+        .pipe(Effect.catchCause(() => Effect.void));
+      yield* engine
+        .dispatch({
+          type: "thread.content.reset",
+          commandId: CommandId.make(yield* crypto.randomUUIDv4),
+          threadId,
+          createdAt: DateTime.formatIso(yield* DateTime.now),
+        })
+        .pipe(Effect.catchCause(() => Effect.void));
+    }
 
-      // Hydrate the freshly-created thread with prior conversation so it opens
-      // showing context instead of an empty box. Best-effort throughout: any
-      // failure here must not fail the import — resume still works regardless.
+    {
+      // Hydrate the thread with prior conversation so it opens showing context
+      // instead of an empty box. Best-effort throughout: any failure here must
+      // not fail the import — resume still works regardless.
       //
       // Claude: replay the native on-disk transcript through the SAME runtime
       // event pipeline the live adapter feeds, so assistant text, reasoning and
@@ -719,5 +743,5 @@ export const importExternalSession = (input: {
         ),
       );
 
-    return { threadId, alreadyImported: false } satisfies ExternalSessionImportResult;
+    return { threadId, alreadyImported } satisfies ExternalSessionImportResult;
   });
