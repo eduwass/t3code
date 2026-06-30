@@ -106,6 +106,22 @@ export interface ProviderServiceShape {
   }) => Effect.Effect<void, ProviderServiceError>;
 
   /**
+   * Publish a pre-built, ordered batch of canonical runtime events onto the
+   * runtime event bus, exactly as if they had been emitted by a live adapter.
+   *
+   * Used to replay a recorded transcript (e.g. an externally-started session
+   * imported from its on-disk log) through the SAME ingestion path the live
+   * stream uses, so historical assistant text, tool calls, outputs and images
+   * render with full fidelity. Events are published in array order; a single
+   * ingestion subscriber consumes the PubSub FIFO, so intra-batch order is
+   * preserved. Final render position is timestamp-ordered downstream, so this
+   * may safely interleave with other history backfill.
+   */
+  readonly replayRuntimeEvents: (
+    events: ReadonlyArray<ProviderRuntimeEvent>,
+  ) => Effect.Effect<void>;
+
+  /**
    * Canonical provider runtime event stream.
    *
    * Fan-out is owned by ProviderService (not by a standalone event-bus service).

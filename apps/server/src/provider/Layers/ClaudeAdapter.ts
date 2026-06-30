@@ -597,7 +597,7 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
   };
 }
 
-function classifyToolItemType(toolName: string): CanonicalItemType {
+export function classifyToolItemType(toolName: string): CanonicalItemType {
   const normalized = toolName.toLowerCase();
   if (normalized.includes("agent")) {
     return "collab_agent_tool_call";
@@ -858,7 +858,7 @@ function summarizeToolRequest(toolName: string, input: Record<string, unknown>):
   return `${toolName}: ${serialized.slice(0, 397)}...`;
 }
 
-function titleForTool(itemType: CanonicalItemType): string {
+export function titleForTool(itemType: CanonicalItemType): string {
   switch (itemType) {
     case "command_execution":
       return "Command run";
