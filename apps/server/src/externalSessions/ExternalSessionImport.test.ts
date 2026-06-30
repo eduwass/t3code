@@ -32,7 +32,10 @@ describe("deterministicThreadId", () => {
 describe("PROVIDER_MAP resume cursors", () => {
   it("builds the native cursor shape each adapter consumes", () => {
     assert.deepStrictEqual(PROVIDER_MAP.claude!.resumeCursor("id-1"), { resume: "id-1" });
-    assert.deepStrictEqual(PROVIDER_MAP.codex!.resumeCursor("id-1"), { threadId: "id-1" });
+    assert.deepStrictEqual(PROVIDER_MAP.codex!.resumeCursor("id-1"), {
+      threadId: "id-1",
+      strictResume: true,
+    });
     assert.deepStrictEqual(PROVIDER_MAP.opencode!.resumeCursor("id-1"), { sessionId: "id-1" });
   });
 

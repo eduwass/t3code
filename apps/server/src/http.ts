@@ -197,10 +197,9 @@ export const resumeRouteLayer = HttpRouter.add(
     const suffix = url.value.pathname.slice(`${RESUME_ROUTE_PREFIX}/`.length);
     const separatorIndex = suffix.indexOf("/");
     if (separatorIndex <= 0) {
-      return HttpServerResponse.text(
-        "Expected /api/resume/<provider>/<sessionId>.",
-        { status: 400 },
-      );
+      return HttpServerResponse.text("Expected /api/resume/<provider>/<sessionId>.", {
+        status: 400,
+      });
     }
     let provider: string;
     let sessionId: string;
