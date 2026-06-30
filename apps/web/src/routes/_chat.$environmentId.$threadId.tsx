@@ -7,6 +7,7 @@ import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../comp
 import { resolveThreadRouteRef } from "../threadRoutes";
 import { SidebarInset } from "~/components/ui/sidebar";
 import { useEnvironmentThreadRefs, useThreadDetail, useThreadShell } from "../state/entities";
+import { useExternalImportStatus } from "../state/useExternalImportStatus";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
 
@@ -62,13 +63,34 @@ function ChatThreadRouteView() {
   }
 
   return (
-    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
+    <SidebarInset className="relative h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
+      <ImportingBanner threadId={threadRef.threadId} />
       <ChatView
         environmentId={threadRef.environmentId}
         threadId={threadRef.threadId}
         routeKind="server"
       />
     </SidebarInset>
+  );
+}
+
+/**
+ * Thin banner shown while a resumed external session is still hydrating in the
+ * background — the conversation streams in live, so this signals the content is
+ * still being imported rather than final.
+ */
+function ImportingBanner({ threadId }: { readonly threadId: string }) {
+  const importing = useExternalImportStatus(threadId);
+  if (!importing) {
+    return null;
+  }
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+      <div className="flex items-center gap-2 rounded-full border border-border bg-background/90 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur">
+        <span className="size-2 animate-pulse rounded-full bg-blue-500" />
+        Importing conversation…
+      </div>
+    </div>
   );
 }
 
