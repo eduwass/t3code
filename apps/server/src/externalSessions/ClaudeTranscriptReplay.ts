@@ -133,10 +133,22 @@ function extractHumanContent(message: TranscriptLine["message"]): {
     }
   }
 
-  const images: ReadonlyArray<ReplayImageRef> =
-    paths.length > 0
-      ? paths.map((p) => ({ sourcePath: p, mimeType: mimeFromExtension(p) }))
-      : base64s.map((b) => ({ base64: b.data, mimeType: b.mimeType }));
+  // Pair the Nth placeholder path with the Nth inline base64 block into one
+  // ref carrying both sources. The importer prefers the original on-disk file
+  // but falls back to base64 when the image-cache has been pruned — neither
+  // alone is reliable (cache files get deleted; base64 isn't always present).
+  const count = Math.max(paths.length, base64s.length);
+  const images: Array<ReplayImageRef> = [];
+  for (let i = 0; i < count; i += 1) {
+    const p = paths[i];
+    const b = base64s[i];
+    if (!p && !b) continue;
+    images.push({
+      ...(p ? { sourcePath: p } : {}),
+      ...(b ? { base64: b.data } : {}),
+      mimeType: p ? mimeFromExtension(p) : (b?.mimeType ?? "image/png"),
+    });
+  }
   return { text: textParts.join("\n\n"), images };
 }
 
@@ -361,16 +373,19 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
       for (const block of blocks) {
         const blockType = asString(block.type);
         if (blockType === "text") {
+          // Distinct id per block: text segments around a tool call are separate
+          // messages, otherwise the assistant buffer concatenates them with no
+          // separator ("…guess.## What …").
           yield* pushContentDelta(
             createdAt,
-            `${messageUuid}:text`,
+            `${messageUuid}:text:${blockIndex}`,
             "assistant_text",
             asString(block.text) ?? "",
           );
         } else if (blockType === "thinking") {
           yield* pushContentDelta(
             createdAt,
-            `${messageUuid}:thinking`,
+            `${messageUuid}:thinking:${blockIndex}`,
             "reasoning_text",
             asString(block.thinking) ?? "",
           );
