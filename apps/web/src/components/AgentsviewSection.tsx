@@ -54,6 +54,18 @@ const DEFAULT_RANGE_DAYS = 7;
 /** Sessions shown per project before a "Show N older in <project>" reveal. */
 const PROJECT_DISPLAY_CAP = 6;
 
+/**
+ * A session whose transcript was touched within this window is treated as
+ * live/working and gets a green ring. The cache refreshes every 30s, so the
+ * threshold is a little above that to avoid flicker between polls.
+ */
+const LIVE_THRESHOLD_MS = 90_000;
+
+function isLiveSession(lastActiveAt: string): boolean {
+  const at = Date.parse(lastActiveAt);
+  return !Number.isNaN(at) && Date.now() - at < LIVE_THRESHOLD_MS;
+}
+
 const AGENT_DOT: Record<string, string> = {
   claude: "bg-blue-500",
   codex: "bg-green-500",
@@ -277,7 +289,14 @@ export function AgentsviewSection() {
                                 <span
                                   className={`mt-1.5 size-1.5 shrink-0 rounded-full ${
                                     AGENT_DOT[row.agent] ?? "bg-muted-foreground"
+                                  } ${
+                                    isLiveSession(row.lastActiveAt)
+                                      ? "ring-2 ring-green-500 ring-offset-1 ring-offset-background"
+                                      : ""
                                   }`}
+                                  title={
+                                    isLiveSession(row.lastActiveAt) ? "Live / working" : undefined
+                                  }
                                 />
                                 <span className="min-w-0 flex-1">
                                   <span className="block truncate text-[13px] text-foreground">
