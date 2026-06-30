@@ -37,10 +37,22 @@ import { classifyToolItemType, titleForTool } from "../provider/Layers/ClaudeAda
 const PROVIDER = ProviderDriverKind.make("claudeAgent");
 const EPOCH_ISO = "1970-01-01T00:00:00.000Z" as IsoDateTime;
 
+/**
+ * A reference to an image embedded in the transcript. The importer resolves the
+ * actual bytes: prefer the original on-disk file (`sourcePath`, higher fidelity)
+ * and fall back to the inline base64 the transcript also carries.
+ */
+export interface ReplayImageRef {
+  readonly sourcePath?: string;
+  readonly base64?: string;
+  readonly mimeType: string;
+}
+
 /** A recorded human prompt to be backfilled as a user message. */
 export interface ReplayUserPrompt {
   readonly text: string;
   readonly createdAt: IsoDateTime;
+  readonly images: ReadonlyArray<ReplayImageRef>;
 }
 
 export interface ClaudeTranscriptReplay {
@@ -66,6 +78,66 @@ interface ContentBlock {
   readonly tool_use_id?: unknown;
   readonly content?: unknown;
   readonly is_error?: unknown;
+  readonly source?: unknown;
+}
+
+// `[Image: source: /abs/path.png]` — Claude writes the original file path as a
+// standalone text block alongside the inline base64 image block.
+const IMAGE_PLACEHOLDER_RE = /^\[Image: source: (.+)\]$/;
+// `[Image #3]` — inline marker Claude injects into the human prompt text.
+const IMAGE_TOKEN_RE = /\[Image #\d+\]/g;
+
+function mimeFromExtension(filePath: string): string {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "image/png";
+}
+
+/**
+ * Extract a human prompt's text and image references from a user message. Image
+ * placeholder paths win over inline base64 (original quality); inline base64 is
+ * the fallback when no path block is present (older transcript format).
+ */
+function extractHumanContent(message: TranscriptLine["message"]): {
+  readonly text: string;
+  readonly images: ReadonlyArray<ReplayImageRef>;
+} {
+  const content = message?.content;
+  if (typeof content === "string") return { text: content, images: [] };
+  if (!Array.isArray(content)) return { text: "", images: [] };
+
+  const paths: string[] = [];
+  const base64s: Array<{ data: string; mimeType: string }> = [];
+  const textParts: string[] = [];
+  for (const block of content as ReadonlyArray<ContentBlock>) {
+    const type = asString(block.type);
+    if (type === "image") {
+      const src = block.source as
+        | { type?: unknown; media_type?: unknown; data?: unknown }
+        | undefined;
+      const data = asString(src?.data);
+      if (src && asString(src.type) === "base64" && data) {
+        base64s.push({ data, mimeType: asString(src.media_type) ?? "image/png" });
+      }
+    } else if (type === "text") {
+      const text = asString(block.text) ?? "";
+      const placeholder = text.match(IMAGE_PLACEHOLDER_RE);
+      if (placeholder?.[1]) {
+        paths.push(placeholder[1]);
+        continue;
+      }
+      const cleaned = text.replace(IMAGE_TOKEN_RE, "").trim();
+      if (cleaned.length > 0) textParts.push(cleaned);
+    }
+  }
+
+  const images: ReadonlyArray<ReplayImageRef> =
+    paths.length > 0
+      ? paths.map((p) => ({ sourcePath: p, mimeType: mimeFromExtension(p) }))
+      : base64s.map((b) => ({ base64: b.data, mimeType: b.mimeType }));
+  return { text: textParts.join("\n\n"), images };
 }
 
 function asString(value: unknown): string | undefined {
@@ -262,23 +334,23 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
         } as ProviderRuntimeEvent);
       }
 
-      const promptText =
-        typeof line.message?.content === "string"
-          ? line.message.content
-          : toolResults.length === 0
-            ? blocks
-                .filter((b) => b.type === "text")
-                .map((b) => asString(b.text) ?? "")
-                .join("")
-            : "";
-      const trimmedPrompt = promptText.trim();
+      // Tool-result lines are not human prompts; only mine prompt text/images
+      // from non-tool-result user messages.
+      const human =
+        toolResults.length === 0
+          ? extractHumanContent(line.message)
+          : { text: "", images: [] as ReadonlyArray<ReplayImageRef> };
+      const trimmedPrompt = human.text.trim();
       // Skip harness-injected synthetic turns (background-task notifications,
       // system reminders, local-command echoes). They are recorded as user
       // messages but are not human prompts — backfilling them renders as noise
       // bubbles, and they must not close an assistant burst mid-turn.
-      if (trimmedPrompt.length > 0 && !isSyntheticUserPrompt(trimmedPrompt)) {
+      const hasContent =
+        (trimmedPrompt.length > 0 || human.images.length > 0) &&
+        !isSyntheticUserPrompt(trimmedPrompt);
+      if (hasContent) {
         yield* closeTurn(createdAt);
-        userPrompts.push({ text: trimmedPrompt, createdAt });
+        userPrompts.push({ text: trimmedPrompt, createdAt, images: human.images });
       }
       continue;
     }

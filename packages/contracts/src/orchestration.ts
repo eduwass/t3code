@@ -790,6 +790,9 @@ export const ThreadHistoryBackfillMessage = Schema.Struct({
   role: OrchestrationMessageRole,
   text: Schema.String,
   createdAt: IsoDateTime,
+  // Image attachments recovered from an imported transcript (already persisted
+  // to the attachments store by the importer; ids reference those files).
+  attachments: Schema.optional(Schema.Array(ChatAttachment)),
 });
 export type ThreadHistoryBackfillMessage = typeof ThreadHistoryBackfillMessage.Type;
 
