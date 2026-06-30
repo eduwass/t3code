@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
 /** How often to poll for newer transcript messages on the open thread. */
-const SYNC_INTERVAL_MS = 8_000;
+const SYNC_INTERVAL_MS = 4_000;
 
 /**
  * While a thread is open, periodically asks the server to sync it with its
@@ -27,8 +27,9 @@ export function useExternalSessionSync(threadId: string | null): void {
       if (!cancelled) timer = setTimeout(() => void tick(), SYNC_INTERVAL_MS);
     };
 
-    // First tick after a short delay so it doesn't race the initial import.
-    timer = setTimeout(() => void tick(), SYNC_INTERVAL_MS);
+    // Sync immediately on open so re-opening a thread catches up at once (a
+    // still-running initial import just no-ops until its marker is set).
+    void tick();
     const onFocus = () => void tick();
     window.addEventListener("focus", onFocus);
     return () => {
