@@ -21,6 +21,7 @@
  * @module ExternalSessionImport
  */
 import * as NodeCrypto from "node:crypto";
+import * as NodeOS from "node:os";
 
 import {
   CommandId,
@@ -40,15 +41,20 @@ import * as Crypto from "effect/Crypto";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
+import { ProviderService } from "../provider/Services/ProviderService.ts";
 import { ProviderSessionDirectory } from "../provider/Services/ProviderSessionDirectory.ts";
 import { WorkspacePaths } from "../workspace/WorkspacePaths.ts";
+import { claudeTranscriptToReplay } from "./ClaudeTranscriptReplay.ts";
 
 /**
  * Per-provider mapping from the URL `provider` token to:
@@ -355,6 +361,40 @@ const fetchSessionTranscript = (agentsviewId: string, nativeId: string) =>
     return messages;
   }).pipe(Effect.catchCause(() => Effect.succeed([] as Array<ThreadHistoryBackfillMessage>)));
 
+const decodeJsonLine = Schema.decodeUnknownExit(Schema.UnknownFromJsonString);
+
+/**
+ * Locate and parse a Claude Code session's on-disk transcript. The bare native
+ * id is the file stem; Claude namespaces files under a per-cwd directory whose
+ * encoding we don't reconstruct, so we scan project dirs for `<id>.jsonl`. Any
+ * failure (missing file, unreadable) yields `[]` — high-fidelity replay is a
+ * nicety layered on top of resume, never a hard dependency.
+ */
+const readClaudeTranscriptLines = (nativeId: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const projectsDir = path.join(NodeOS.homedir(), ".claude", "projects");
+    const dirs = yield* fs
+      .readDirectory(projectsDir)
+      .pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<string>));
+    for (const dir of dirs) {
+      const file = path.join(projectsDir, dir, `${nativeId}.jsonl`);
+      const content = yield* fs.readFileString(file).pipe(Effect.option);
+      if (Option.isNone(content)) continue;
+      const lines: Array<unknown> = [];
+      for (const rawLine of content.value.split("\n")) {
+        const trimmed = rawLine.trim();
+        if (trimmed.length === 0) continue;
+        const decoded = decodeJsonLine(trimmed);
+        // Skip malformed lines rather than abort the whole transcript.
+        if (Exit.isSuccess(decoded)) lines.push(decoded.value);
+      }
+      return lines;
+    }
+    return [] as Array<unknown>;
+  }).pipe(Effect.orElseSucceed(() => [] as Array<unknown>));
+
 /** Resolve (find or deterministically create) the project owning `cwd`. */
 const resolveProjectId = (workspaceRoot: string, modelSelection: ModelSelection) =>
   Effect.gen(function* () {
@@ -430,6 +470,7 @@ export const importExternalSession = (input: {
     const projection = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
     const engine = yield* OrchestrationEngineService;
     const workspacePaths = yield* WorkspacePaths;
+    const providerService = yield* ProviderService;
     const crypto = yield* Crypto.Crypto;
     const threadId = ThreadId.make(deterministicThreadId(mapping.driver, nativeId));
 
@@ -527,20 +568,59 @@ export const importExternalSession = (input: {
           ),
         );
 
-      // Backfill the recent transcript so the thread opens showing the prior
-      // conversation instead of an empty box. Best-effort: a failure here must
-      // not fail the import — resume still works without the rendered history.
-      const transcript = yield* fetchSessionTranscript(mapping.agentsviewId(nativeId), nativeId);
-      if (transcript.length > 0) {
-        yield* engine
-          .dispatch({
-            type: "thread.history.backfill",
-            commandId: CommandId.make(yield* crypto.randomUUIDv4),
-            threadId,
-            messages: transcript,
-            createdAt: DateTime.formatIso(yield* DateTime.now),
-          })
-          .pipe(Effect.catchCause(() => Effect.void));
+      // Hydrate the freshly-created thread with prior conversation so it opens
+      // showing context instead of an empty box. Best-effort throughout: any
+      // failure here must not fail the import — resume still works regardless.
+      //
+      // Claude: replay the native on-disk transcript through the SAME runtime
+      // event pipeline the live adapter feeds, so assistant text, reasoning and
+      // tool calls render at full fidelity. Human prompts are not runtime events
+      // (live T3 records them via send-turn), so they go through history
+      // backfill. Other providers — or a missing Claude file — fall back to
+      // agentsview's pre-rendered text.
+      let hydrated = false;
+      if (input.provider === "claude") {
+        const lines = yield* readClaudeTranscriptLines(nativeId);
+        if (lines.length > 0) {
+          const replay = yield* claudeTranscriptToReplay({ lines, threadId });
+          const messages: Array<ThreadHistoryBackfillMessage> = replay.userPrompts.map((p, i) => ({
+            messageId: MessageId.make(deterministicUuid(`t3-resume-msg:${nativeId}:user:${i}`)),
+            role: "user" as OrchestrationMessageRole,
+            text: p.text,
+            createdAt: p.createdAt,
+          }));
+          if (messages.length > 0) {
+            yield* engine
+              .dispatch({
+                type: "thread.history.backfill",
+                commandId: CommandId.make(yield* crypto.randomUUIDv4),
+                threadId,
+                messages,
+                createdAt: DateTime.formatIso(yield* DateTime.now),
+              })
+              .pipe(Effect.catchCause(() => Effect.void));
+          }
+          if (replay.events.length > 0) {
+            yield* providerService
+              .replayRuntimeEvents(replay.events)
+              .pipe(Effect.catchCause(() => Effect.void));
+          }
+          hydrated = true;
+        }
+      }
+      if (!hydrated) {
+        const transcript = yield* fetchSessionTranscript(mapping.agentsviewId(nativeId), nativeId);
+        if (transcript.length > 0) {
+          yield* engine
+            .dispatch({
+              type: "thread.history.backfill",
+              commandId: CommandId.make(yield* crypto.randomUUIDv4),
+              threadId,
+              messages: transcript,
+              createdAt: DateTime.formatIso(yield* DateTime.now),
+            })
+            .pipe(Effect.catchCause(() => Effect.void));
+        }
       }
     }
 
