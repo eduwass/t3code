@@ -202,8 +202,14 @@ export const resumeRouteLayer = HttpRouter.add(
         { status: 400 },
       );
     }
-    const provider = decodeURIComponent(suffix.slice(0, separatorIndex));
-    const sessionId = decodeURIComponent(suffix.slice(separatorIndex + 1));
+    let provider: string;
+    let sessionId: string;
+    try {
+      provider = decodeURIComponent(suffix.slice(0, separatorIndex));
+      sessionId = decodeURIComponent(suffix.slice(separatorIndex + 1));
+    } catch {
+      return HttpServerResponse.text("Malformed URL encoding.", { status: 400 });
+    }
 
     const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
     const environmentId = yield* serverEnvironment.getEnvironmentId;

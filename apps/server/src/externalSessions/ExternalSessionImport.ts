@@ -13,12 +13,14 @@
  * and resumes the original conversation — no new resume logic required.
  *
  * The T3 `threadId` is derived deterministically from (driver, nativeId) so
- * importing the same session twice reuses the same thread (idempotent) without
- * needing an extra schema column.
+ * importing the same session twice reuses the same thread. The whole import is
+ * a self-repairing idempotent saga: each step (project, thread, binding) is
+ * checked against current state before it runs and re-checked on dispatch
+ * conflict, so a partial failure can always be retried to completion.
  *
  * @module ExternalSessionImport
  */
-import { createHash } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 import {
   CommandId,
@@ -36,12 +38,14 @@ import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
 import { ProviderSessionDirectory } from "../provider/Services/ProviderSessionDirectory.ts";
+import { WorkspacePaths } from "../workspace/WorkspacePaths.ts";
 
 /**
  * Per-provider mapping from the URL `provider` token to:
@@ -49,7 +53,8 @@ import { ProviderSessionDirectory } from "../provider/Services/ProviderSessionDi
  *  - the agentsview session id (how the daemon namespaces this agent's ids),
  *  - the provider-native resume cursor shape consumed by the adapter.
  *
- * The URL always carries the bare native id (no agentsview prefix).
+ * The URL always carries the bare native id (no agentsview prefix). The URL
+ * `provider` token also equals the agentsview `agent` field, which we verify.
  */
 export const PROVIDER_MAP: Record<
   string,
@@ -78,7 +83,16 @@ export const PROVIDER_MAP: Record<
 
 export const SUPPORTED_EXTERNAL_PROVIDERS = Object.keys(PROVIDER_MAP);
 
+/** Native ids we accept: uuids and `ses_…`-style ids. No slashes/controls. */
+const SESSION_ID_RE = /^[A-Za-z0-9._:-]{1,256}$/;
+
+export function isValidSessionId(value: string): boolean {
+  return SESSION_ID_RE.test(value);
+}
+
 const AGENTSVIEW_BASE_URL = process.env.AGENTSVIEW_URL ?? "http://127.0.0.1:18080";
+const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
+const AGENTSVIEW_TIMEOUT = "5 seconds";
 
 export class ExternalSessionImportError extends Data.TaggedError("ExternalSessionImportError")<{
   readonly reason: string;
@@ -90,10 +104,56 @@ export interface ExternalSessionImportResult {
   readonly alreadyImported: boolean;
 }
 
+const AgentsviewSessionSchema = Schema.Struct({
+  agent: Schema.String,
+  cwd: Schema.String,
+  machine: Schema.String,
+  first_message: Schema.optional(Schema.String),
+});
+const decodeAgentsviewSession = Schema.decodeUnknownEffect(AgentsviewSessionSchema);
+
+/** Build the agentsview request URL, enforcing a loopback-only daemon. */
+function agentsviewSessionUrl(agentsviewId: string): string | undefined {
+  let base: URL;
+  try {
+    base = new URL(AGENTSVIEW_BASE_URL);
+  } catch {
+    return undefined;
+  }
+  if (!LOOPBACK_HOSTNAMES.has(base.hostname)) {
+    return undefined;
+  }
+  base.pathname = `/api/v1/sessions/${encodeURIComponent(agentsviewId)}`;
+  base.search = "";
+  base.hash = "";
+  return base.toString();
+}
+
+/** UUIDv5-shaped id derived from a namespace key, for stable derived ids. */
+function deterministicUuid(key: string): string {
+  const bytes = NodeCrypto.createHash("sha1").update(key).digest().subarray(0, 16);
+  // Force version 5 and RFC 4122 variant bits.
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Buffer.from(bytes).toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+/**
+ * Stable thread id for an external session. Same (driver, nativeId) → same
+ * thread, so repeated imports converge instead of duplicating.
+ */
+export function deterministicThreadId(driver: string, nativeId: string): string {
+  return deterministicUuid(`t3-resume:${driver}:${nativeId}`);
+}
+
+/** Stable project id for a workspace root, so concurrent imports converge. */
+function deterministicProjectId(workspaceRoot: string): string {
+  return deterministicUuid(`t3-resume-project:${workspaceRoot}`);
+}
+
 interface AgentsviewSession {
-  readonly agent: string;
   readonly cwd: string;
-  readonly machine: string;
   readonly firstMessage?: string;
 }
 
@@ -103,59 +163,67 @@ function baseName(cwd: string): string {
   return segments[segments.length - 1] ?? "project";
 }
 
-/**
- * Deterministic UUIDv5-shaped id from (driver, nativeId) so repeated imports
- * of the same external session map to one stable T3 thread.
- */
-export function deterministicThreadId(driver: string, nativeId: string): string {
-  const bytes = createHash("sha1").update(`t3-resume:${driver}:${nativeId}`).digest().subarray(0, 16);
-  // Force version 5 and RFC 4122 variant bits.
-  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
-  const hex = Buffer.from(bytes).toString("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-}
-
-const fetchAgentsviewSession = (agentsviewId: string) =>
+const fetchAgentsviewSession = (agentsviewId: string, expectedAgent: string) =>
   Effect.gen(function* () {
+    const url = agentsviewSessionUrl(agentsviewId);
+    if (url === undefined) {
+      return yield* new ExternalSessionImportError({
+        reason: `agentsview URL must point at a loopback host (got ${AGENTSVIEW_BASE_URL}).`,
+      });
+    }
     const httpClient = yield* HttpClient.HttpClient;
-    const response = yield* httpClient
-      .get(`${AGENTSVIEW_BASE_URL}/api/v1/sessions/${encodeURIComponent(agentsviewId)}`)
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new ExternalSessionImportError({
-              reason: `Failed to reach agentsview at ${AGENTSVIEW_BASE_URL} (is the daemon running?).`,
-              cause,
-            }),
-        ),
-      );
+    const response = yield* httpClient.get(url).pipe(
+      Effect.timeout(AGENTSVIEW_TIMEOUT),
+      Effect.mapError(
+        (cause) =>
+          new ExternalSessionImportError({
+            reason: `Failed to reach agentsview at ${AGENTSVIEW_BASE_URL} (is the daemon running?).`,
+            cause,
+          }),
+      ),
+    );
     if (response.status !== 200) {
       return yield* new ExternalSessionImportError({
         reason: `agentsview returned ${response.status} for session '${agentsviewId}'.`,
       });
     }
-    const raw = (yield* response.json.pipe(
+    const raw = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
           new ExternalSessionImportError({
-            reason: `Could not parse agentsview response for '${agentsviewId}'.`,
+            reason: `Could not read agentsview response for '${agentsviewId}'.`,
             cause,
           }),
       ),
-    )) as Record<string, unknown>;
-
-    const cwd = typeof raw.cwd === "string" ? raw.cwd.trim() : "";
+    );
+    const decoded = yield* decodeAgentsviewSession(raw).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ExternalSessionImportError({
+            reason: `Unexpected agentsview response shape for '${agentsviewId}'.`,
+            cause,
+          }),
+      ),
+    );
+    if (decoded.agent !== expectedAgent) {
+      return yield* new ExternalSessionImportError({
+        reason: `Session '${agentsviewId}' is a '${decoded.agent}' session, not '${expectedAgent}'.`,
+      });
+    }
+    if (decoded.machine !== "local") {
+      return yield* new ExternalSessionImportError({
+        reason: `Session lives on machine '${decoded.machine}', not this one. Resume only works where the CLI history is stored.`,
+      });
+    }
+    const cwd = decoded.cwd.trim();
     if (cwd.length === 0) {
       return yield* new ExternalSessionImportError({
         reason: `Session '${agentsviewId}' has no recorded working directory; cannot resume.`,
       });
     }
     const session: AgentsviewSession = {
-      agent: typeof raw.agent === "string" ? raw.agent : "",
       cwd,
-      machine: typeof raw.machine === "string" ? raw.machine : "",
-      ...(typeof raw.first_message === "string" ? { firstMessage: raw.first_message } : {}),
+      ...(decoded.first_message !== undefined ? { firstMessage: decoded.first_message } : {}),
     };
     return session;
   });
@@ -170,9 +238,62 @@ const resolveModelSelection = (instanceId: ProviderInstanceId) =>
       });
     }
     const snapshot = yield* instance.snapshot.getSnapshot;
+    // ponytail: first listed model is a reasonable default; resume continues
+    // with the native session's own model regardless. Upgrade: use the
+    // instance's configured default model selection when one is exposed.
     const model = snapshot.models[0]?.slug ?? DEFAULT_MODEL;
     const selection: ModelSelection = { instanceId, model };
     return selection;
+  });
+
+/** Resolve (find or deterministically create) the project owning `cwd`. */
+const resolveProjectId = (workspaceRoot: string, modelSelection: ModelSelection) =>
+  Effect.gen(function* () {
+    const engine = yield* OrchestrationEngineService;
+    const projection = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+    const crypto = yield* Crypto.Crypto;
+
+    const lookup = () =>
+      projection.getActiveProjectByWorkspaceRoot(workspaceRoot).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ExternalSessionImportError({ reason: "Failed to look up project.", cause }),
+        ),
+      );
+
+    const existing = yield* lookup();
+    if (Option.isSome(existing)) {
+      return existing.value.id;
+    }
+
+    const projectId = ProjectId.make(deterministicProjectId(workspaceRoot));
+    const createdAt = DateTime.formatIso(yield* DateTime.now);
+    yield* engine
+      .dispatch({
+        type: "project.create",
+        commandId: CommandId.make(yield* crypto.randomUUIDv4),
+        projectId,
+        title: baseName(workspaceRoot),
+        workspaceRoot,
+        defaultModelSelection: modelSelection,
+        createdAt,
+      })
+      .pipe(
+        // A concurrent import may have created the project first; if so, adopt it.
+        Effect.catch((cause) =>
+          lookup().pipe(
+            Effect.flatMap((again) =>
+              Option.isSome(again)
+                ? Effect.succeed(again.value.id)
+                : Effect.fail(
+                    new ExternalSessionImportError({ reason: "Failed to create project.", cause }),
+                  ),
+            ),
+          ),
+        ),
+        Effect.map(() => projectId),
+      );
+    return projectId;
   });
 
 export const importExternalSession = (input: {
@@ -187,85 +308,97 @@ export const importExternalSession = (input: {
       });
     }
     const nativeId = input.sessionId.trim();
-    if (nativeId.length === 0) {
-      return yield* new ExternalSessionImportError({ reason: "Missing session id." });
+    if (!isValidSessionId(nativeId)) {
+      return yield* new ExternalSessionImportError({
+        reason: "Invalid session id (expected up to 256 chars of [A-Za-z0-9._:-]).",
+      });
     }
 
-    const crypto = yield* Crypto.Crypto;
     const directory = yield* ProviderSessionDirectory;
+    const projection = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+    const engine = yield* OrchestrationEngineService;
+    const workspacePaths = yield* WorkspacePaths;
+    const crypto = yield* Crypto.Crypto;
     const threadId = ThreadId.make(deterministicThreadId(mapping.driver, nativeId));
 
-    // Idempotency: if we already imported this session, just reuse the thread.
-    const existingBinding = yield* directory
-      .getBinding(threadId)
-      .pipe(Effect.orElseSucceed(() => Option.none<unknown>()));
+    // Fully-imported short-circuit: a present binding means resume is ready.
+    // Read errors must NOT be treated as "not imported" — fail instead.
+    const existingBinding = yield* directory.getBinding(threadId).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ExternalSessionImportError({ reason: "Failed to read existing binding.", cause }),
+      ),
+    );
     if (Option.isSome(existingBinding)) {
       return { threadId, alreadyImported: true } satisfies ExternalSessionImportResult;
     }
 
-    const meta = yield* fetchAgentsviewSession(mapping.agentsviewId(nativeId));
-    if (meta.machine !== "local") {
-      return yield* new ExternalSessionImportError({
-        reason: `Session lives on machine '${meta.machine}', not this one. Resume only works where the CLI history is stored.`,
-      });
-    }
+    const meta = yield* fetchAgentsviewSession(mapping.agentsviewId(nativeId), input.provider);
+
+    // Normalize through the same validation as ordinary project creation so a
+    // stale/hostile agentsview cwd cannot create bogus project state.
+    const cwd = yield* workspacePaths.normalizeWorkspaceRoot(meta.cwd).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ExternalSessionImportError({
+            reason: `Session working directory is not a valid workspace: ${meta.cwd}`,
+            cause,
+          }),
+      ),
+    );
 
     const driver = ProviderDriverKind.make(mapping.driver);
     const instanceId = defaultInstanceIdForDriver(driver);
     const modelSelection = yield* resolveModelSelection(instanceId);
 
-    const engine = yield* OrchestrationEngineService;
-    const projection = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-
-    // Find-or-create the project that owns this cwd.
-    const existingProject = yield* projection.getActiveProjectByWorkspaceRoot(meta.cwd);
-    let projectId: ProjectId;
-    if (Option.isSome(existingProject)) {
-      projectId = existingProject.value.id;
-    } else {
-      projectId = ProjectId.make(yield* crypto.randomUUIDv4);
-      const projectCreatedAt = DateTime.formatIso(yield* DateTime.now);
+    // Create the thread only if it doesn't already exist (self-repair: a prior
+    // run may have created the thread but failed before binding).
+    const threadShell = yield* projection.getThreadShellById(threadId).pipe(
+      Effect.mapError(
+        (cause) => new ExternalSessionImportError({ reason: "Failed to read thread.", cause }),
+      ),
+    );
+    if (Option.isNone(threadShell)) {
+      const projectId = yield* resolveProjectId(cwd, modelSelection);
+      const title = (meta.firstMessage ?? "").trim().slice(0, 80) || "Imported session";
+      const createdAt = DateTime.formatIso(yield* DateTime.now);
       yield* engine
         .dispatch({
-          type: "project.create",
+          type: "thread.create",
           commandId: CommandId.make(yield* crypto.randomUUIDv4),
+          threadId,
           projectId,
-          title: baseName(meta.cwd),
-          workspaceRoot: meta.cwd,
-          defaultModelSelection: modelSelection,
-          createdAt: projectCreatedAt,
+          title,
+          modelSelection,
+          runtimeMode: DEFAULT_RUNTIME_MODE,
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt,
         })
         .pipe(
-          Effect.mapError(
-            (cause) =>
-              new ExternalSessionImportError({ reason: "Failed to create project.", cause }),
+          // A concurrent import may have created the thread first; tolerate it.
+          Effect.catch((cause) =>
+            projection.getThreadShellById(threadId).pipe(
+              Effect.flatMap((again) =>
+                Option.isSome(again)
+                  ? Effect.void
+                  : Effect.fail(
+                      new ExternalSessionImportError({ reason: "Failed to create thread.", cause }),
+                    ),
+              ),
+              Effect.catch(() =>
+                Effect.fail(
+                  new ExternalSessionImportError({ reason: "Failed to create thread.", cause }),
+                ),
+              ),
+            ),
           ),
         );
     }
 
-    const title = (meta.firstMessage ?? "").trim().slice(0, 80) || "Imported session";
-    const createdAt = DateTime.formatIso(yield* DateTime.now);
-    yield* engine
-      .dispatch({
-        type: "thread.create",
-        commandId: CommandId.make(yield* crypto.randomUUIDv4),
-        threadId,
-        projectId,
-        title,
-        modelSelection,
-        runtimeMode: DEFAULT_RUNTIME_MODE,
-        interactionMode: "default",
-        branch: null,
-        worktreePath: null,
-        createdAt,
-      })
-      .pipe(
-        Effect.mapError(
-          (cause) => new ExternalSessionImportError({ reason: "Failed to create thread.", cause }),
-        ),
-      );
-
-    // Pre-seed the resume binding so the first turn resumes the native session.
+    // Pre-seed (or repair) the resume binding so the first turn resumes the
+    // native session.
     yield* directory
       .upsert({
         threadId,
@@ -274,7 +407,7 @@ export const importExternalSession = (input: {
         runtimeMode: DEFAULT_RUNTIME_MODE,
         status: "stopped",
         resumeCursor: mapping.resumeCursor(nativeId),
-        runtimePayload: { cwd: meta.cwd, model: modelSelection.model, modelSelection },
+        runtimePayload: { cwd, model: modelSelection.model, modelSelection },
       })
       .pipe(
         Effect.mapError(
