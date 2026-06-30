@@ -714,6 +714,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         }
 
         case "thread.message-sent":
+        case "thread.history-backfilled":
         case "thread.proposed-plan-upserted":
         case "thread.activity-appended":
         case "thread.approval-response-requested":
@@ -845,6 +846,36 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             createdAt: previousMessage?.createdAt ?? event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
           });
+          return;
+        }
+
+        case "thread.history-backfilled": {
+          // Write each historical message, skipping any that already exist so
+          // re-import is idempotent. These are completed (non-streaming) and
+          // belong to no T3 turn.
+          yield* Effect.forEach(
+            event.payload.messages,
+            (message) =>
+              Effect.gen(function* () {
+                const existing = yield* projectionThreadMessageRepository.getByMessageId({
+                  messageId: message.messageId,
+                });
+                if (Option.isSome(existing)) {
+                  return;
+                }
+                yield* projectionThreadMessageRepository.upsert({
+                  messageId: message.messageId,
+                  threadId: event.payload.threadId,
+                  turnId: null,
+                  role: message.role,
+                  text: message.text,
+                  isStreaming: false,
+                  createdAt: message.createdAt,
+                  updatedAt: message.createdAt,
+                });
+              }),
+            { concurrency: 1 },
+          ).pipe(Effect.asVoid);
           return;
         }
 

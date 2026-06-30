@@ -27,10 +27,13 @@ import {
   defaultInstanceIdForDriver,
   DEFAULT_MODEL,
   DEFAULT_RUNTIME_MODE,
+  MessageId,
   type ModelSelection,
+  type OrchestrationMessageRole,
   ProjectId,
   ProviderDriverKind,
   type ProviderInstanceId,
+  type ThreadHistoryBackfillMessage,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
@@ -298,6 +301,60 @@ const resolveModelSelection = (
     return selection;
   });
 
+const HISTORY_BACKFILL_LIMIT = 50;
+const BACKFILL_ROLES = new Set<string>(["user", "assistant", "system"]);
+
+/**
+ * Best-effort fetch of the last N messages of the native session, in
+ * chronological order, ready to backfill into the T3 transcript. agentsview
+ * already renders each message to readable text (tool calls inlined). Message
+ * ids are deterministic per (session, ordinal) so re-import never duplicates.
+ * Any failure yields an empty list — history is a nicety, never blocks import.
+ */
+const fetchSessionTranscript = (agentsviewId: string, nativeId: string) =>
+  Effect.gen(function* () {
+    const url = agentsviewUrl(
+      `/api/v1/sessions/${encodeURIComponent(agentsviewId)}/messages`,
+      `direction=desc&limit=${HISTORY_BACKFILL_LIMIT}`,
+    );
+    if (url === undefined) return [] as Array<ThreadHistoryBackfillMessage>;
+    const httpClient = yield* HttpClient.HttpClient;
+    const response = yield* httpClient.get(url).pipe(Effect.timeout(AGENTSVIEW_TIMEOUT));
+    if (response.status !== 200) return [] as Array<ThreadHistoryBackfillMessage>;
+    const raw = (yield* response.json) as { readonly messages?: ReadonlyArray<unknown> };
+    const rows = Array.isArray(raw.messages) ? raw.messages : [];
+    const messages: Array<ThreadHistoryBackfillMessage> = [];
+    // Response is newest-first; reverse to chronological for the transcript.
+    for (const row of rows.toReversed()) {
+      if (!row || typeof row !== "object") continue;
+      const record = row as {
+        role?: unknown;
+        content?: unknown;
+        ordinal?: unknown;
+        timestamp?: unknown;
+      };
+      const role = typeof record.role === "string" ? record.role : "";
+      const text = typeof record.content === "string" ? record.content : "";
+      const ordinal = typeof record.ordinal === "number" ? record.ordinal : undefined;
+      const timestamp = typeof record.timestamp === "string" ? record.timestamp : undefined;
+      if (
+        !BACKFILL_ROLES.has(role) ||
+        text.trim().length === 0 ||
+        ordinal === undefined ||
+        !timestamp
+      ) {
+        continue;
+      }
+      messages.push({
+        messageId: MessageId.make(deterministicUuid(`t3-resume-msg:${nativeId}:${ordinal}`)),
+        role: role as OrchestrationMessageRole,
+        text,
+        createdAt: timestamp,
+      });
+    }
+    return messages;
+  }).pipe(Effect.catchCause(() => Effect.succeed([] as Array<ThreadHistoryBackfillMessage>)));
+
 /** Resolve (find or deterministically create) the project owning `cwd`. */
 const resolveProjectId = (workspaceRoot: string, modelSelection: ModelSelection) =>
   Effect.gen(function* () {
@@ -425,6 +482,7 @@ export const importExternalSession = (input: {
       const projectId = yield* resolveProjectId(cwd, modelSelection);
       const title = (meta.firstMessage ?? "").trim().slice(0, 80) || "Imported session";
       const createdAt = DateTime.formatIso(yield* DateTime.now);
+      const unarchiveCommandId = CommandId.make(yield* crypto.randomUUIDv4);
       yield* engine
         .dispatch({
           type: "thread.create",
@@ -440,24 +498,50 @@ export const importExternalSession = (input: {
           createdAt,
         })
         .pipe(
-          // A concurrent import may have created the thread first; tolerate it.
+          // The deterministic thread may already exist from a prior import:
+          // active (a concurrent race) or archived (the user archived it).
+          // Tolerate both — adopt an active thread, or unarchive an archived
+          // one — so re-import always lands on a usable thread.
           Effect.catch((cause) =>
             projection.getThreadShellById(threadId).pipe(
               Effect.flatMap((again) =>
                 Option.isSome(again)
                   ? Effect.void
-                  : Effect.fail(
-                      new ExternalSessionImportError({ reason: "Failed to create thread.", cause }),
-                    ),
+                  : engine
+                      .dispatch({
+                        type: "thread.unarchive",
+                        commandId: unarchiveCommandId,
+                        threadId,
+                      })
+                      .pipe(Effect.asVoid),
               ),
               Effect.catch(() =>
                 Effect.fail(
-                  new ExternalSessionImportError({ reason: "Failed to create thread.", cause }),
+                  new ExternalSessionImportError({
+                    reason: "Failed to create or restore thread.",
+                    cause,
+                  }),
                 ),
               ),
             ),
           ),
         );
+
+      // Backfill the recent transcript so the thread opens showing the prior
+      // conversation instead of an empty box. Best-effort: a failure here must
+      // not fail the import — resume still works without the rendered history.
+      const transcript = yield* fetchSessionTranscript(mapping.agentsviewId(nativeId), nativeId);
+      if (transcript.length > 0) {
+        yield* engine
+          .dispatch({
+            type: "thread.history.backfill",
+            commandId: CommandId.make(yield* crypto.randomUUIDv4),
+            threadId,
+            messages: transcript,
+            createdAt: DateTime.formatIso(yield* DateTime.now),
+          })
+          .pipe(Effect.catchCause(() => Effect.void));
+      }
     }
 
     // Pre-seed (or repair) the resume binding so the first turn resumes the
