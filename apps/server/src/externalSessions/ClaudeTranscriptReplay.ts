@@ -244,6 +244,10 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
   let currentTurnId: TurnId | undefined;
   let turnOpen = false;
   let lastCreatedAt: IsoDateTime = EPOCH_ISO;
+  // Timestamp of the last assistant-side event in the current turn. The turn is
+  // completed at THIS time (when the model stopped), not at the next human
+  // prompt — otherwise idle time between turns inflates the "Worked for …".
+  let turnLastActivityAt: IsoDateTime = EPOCH_ISO;
 
   const baseEvent = (createdAt: IsoDateTime) =>
     Effect.map(uuid, (id) => ({
@@ -259,6 +263,7 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
       if (turnOpen) return;
       currentTurnId = TurnId.make(yield* uuid);
       turnOpen = true;
+      turnLastActivityAt = createdAt;
       const base = yield* baseEvent(createdAt);
       events.push({
         ...base,
@@ -268,10 +273,11 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
       } as ProviderRuntimeEvent);
     });
 
-  const closeTurn = (createdAt: IsoDateTime) =>
+  // Completes at the last assistant-side activity time, not "now"/next prompt.
+  const closeTurn = () =>
     Effect.gen(function* () {
       if (!turnOpen) return;
-      const base = yield* baseEvent(createdAt);
+      const base = yield* baseEvent(turnLastActivityAt);
       events.push({
         ...base,
         type: "turn.completed",
@@ -290,6 +296,7 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
   ) =>
     Effect.gen(function* () {
       if (delta.length === 0) return;
+      turnLastActivityAt = createdAt;
       const base = yield* baseEvent(createdAt);
       events.push({
         ...base,
@@ -325,6 +332,7 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
         if (output.length > 0 && streamKind !== "unknown") {
           yield* pushContentDelta(createdAt, toolUseId, streamKind, output);
         }
+        turnLastActivityAt = createdAt;
         const base = yield* baseEvent(createdAt);
         events.push({
           ...base,
@@ -361,7 +369,7 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
         (trimmedPrompt.length > 0 || human.images.length > 0) &&
         !isSyntheticUserPrompt(trimmedPrompt);
       if (hasContent) {
-        yield* closeTurn(createdAt);
+        yield* closeTurn();
         userPrompts.push({ text: trimmedPrompt, createdAt, images: human.images });
       }
       continue;
@@ -394,6 +402,7 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
           const toolName = asString(block.name) ?? "tool";
           const itemType = classifyToolItemType(toolName);
           toolItemTypeById.set(toolUseId, itemType);
+          turnLastActivityAt = createdAt;
           const base = yield* baseEvent(createdAt);
           events.push({
             ...base,
@@ -422,7 +431,7 @@ export const claudeTranscriptToReplay = Effect.fn("claudeTranscriptToReplay")(fu
     // last-prompt) carry no renderable conversation content — skip them.
   }
 
-  yield* closeTurn(lastCreatedAt);
+  yield* closeTurn();
 
   // Settle the imported thread: an external session has no live provider, so
   // it must not render as a running session. session.exited clears any active
