@@ -12,6 +12,7 @@ import { toProjectorDecodeError, type OrchestrationProjectorDecodeError } from "
 import {
   MessageSentPayloadSchema,
   ThreadHistoryBackfilledPayload,
+  ThreadContentResetPayload,
   ProjectCreatedPayload,
   ProjectDeletedPayload,
   ProjectMetaUpdatedPayload,
@@ -491,6 +492,21 @@ export function projectEvent(
           }),
         };
       });
+
+    case "thread.content-reset":
+      return decodeForEvent(ThreadContentResetPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            messages: [],
+            activities: [],
+            proposedPlans: [],
+            checkpoints: [],
+            session: null,
+            updatedAt: event.occurredAt,
+          }),
+        })),
+      );
 
     case "thread.session-set":
       return Effect.gen(function* () {
