@@ -61,7 +61,7 @@ export const PROVIDER_MAP: Record<
   {
     readonly driver: string;
     readonly agentsviewId: (nativeId: string) => string;
-    readonly resumeCursor: (nativeId: string) => Record<string, string>;
+    readonly resumeCursor: (nativeId: string) => Record<string, string | boolean>;
   }
 > = {
   claude: {
@@ -72,7 +72,9 @@ export const PROVIDER_MAP: Record<
   codex: {
     driver: "codex",
     agentsviewId: (id) => `codex:${id}`,
-    resumeCursor: (id) => ({ threadId: id }),
+    // strictResume: an imported "resume session X" link must fail rather than
+    // silently start a fresh empty Codex thread if the native thread is gone.
+    resumeCursor: (id) => ({ threadId: id, strictResume: true }),
   },
   opencode: {
     driver: "opencode",
@@ -254,12 +256,14 @@ const resolveProjectId = (workspaceRoot: string, modelSelection: ModelSelection)
     const crypto = yield* Crypto.Crypto;
 
     const lookup = () =>
-      projection.getActiveProjectByWorkspaceRoot(workspaceRoot).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ExternalSessionImportError({ reason: "Failed to look up project.", cause }),
-        ),
-      );
+      projection
+        .getActiveProjectByWorkspaceRoot(workspaceRoot)
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new ExternalSessionImportError({ reason: "Failed to look up project.", cause }),
+          ),
+        );
 
     const existing = yield* lookup();
     if (Option.isSome(existing)) {
@@ -322,15 +326,26 @@ export const importExternalSession = (input: {
     const crypto = yield* Crypto.Crypto;
     const threadId = ThreadId.make(deterministicThreadId(mapping.driver, nativeId));
 
-    // Fully-imported short-circuit: a present binding means resume is ready.
-    // Read errors must NOT be treated as "not imported" — fail instead.
-    const existingBinding = yield* directory.getBinding(threadId).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ExternalSessionImportError({ reason: "Failed to read existing binding.", cause }),
-      ),
-    );
-    if (Option.isSome(existingBinding)) {
+    // Fully-imported short-circuit: resume is ready only when BOTH a binding
+    // and an *active* thread exist. If the thread was archived/deleted, the
+    // stale binding alone must not redirect into a dead thread — fall through
+    // and re-create + re-bind. Read errors are failures, not "not imported".
+    const existingBinding = yield* directory
+      .getBinding(threadId)
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new ExternalSessionImportError({ reason: "Failed to read existing binding.", cause }),
+        ),
+      );
+    const existingThread = yield* projection
+      .getThreadShellById(threadId)
+      .pipe(
+        Effect.mapError(
+          (cause) => new ExternalSessionImportError({ reason: "Failed to read thread.", cause }),
+        ),
+      );
+    if (Option.isSome(existingBinding) && Option.isSome(existingThread)) {
       return { threadId, alreadyImported: true } satisfies ExternalSessionImportResult;
     }
 
@@ -353,13 +368,9 @@ export const importExternalSession = (input: {
     const modelSelection = yield* resolveModelSelection(instanceId);
 
     // Create the thread only if it doesn't already exist (self-repair: a prior
-    // run may have created the thread but failed before binding).
-    const threadShell = yield* projection.getThreadShellById(threadId).pipe(
-      Effect.mapError(
-        (cause) => new ExternalSessionImportError({ reason: "Failed to read thread.", cause }),
-      ),
-    );
-    if (Option.isNone(threadShell)) {
+    // run may have created the thread but failed before binding, or the thread
+    // was archived/deleted while a stale binding lingered).
+    if (Option.isNone(existingThread)) {
       const projectId = yield* resolveProjectId(cwd, modelSelection);
       const title = (meta.firstMessage ?? "").trim().slice(0, 80) || "Imported session";
       const createdAt = DateTime.formatIso(yield* DateTime.now);
