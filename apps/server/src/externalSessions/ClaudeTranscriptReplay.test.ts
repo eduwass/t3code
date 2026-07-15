@@ -1,0 +1,274 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, describe, it } from "@effect/vitest";
+import { ThreadId, type ProviderRuntimeEvent } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+
+import { claudeTranscriptToReplay } from "./ClaudeTranscriptReplay.ts";
+
+const threadId = ThreadId.make("00000000-0000-4000-8000-000000000000");
+
+/** Loosely-typed view of an event payload for assertions. */
+const payloadOf = (event: ProviderRuntimeEvent | undefined): Record<string, unknown> =>
+  (event as unknown as { payload: Record<string, unknown> } | undefined)?.payload ?? {};
+
+const LINES: ReadonlyArray<unknown> = [
+  {
+    type: "user",
+    uuid: "u1",
+    timestamp: "2024-01-01T00:00:00.000Z",
+    message: { role: "user", content: "do the thing" },
+  },
+  {
+    type: "assistant",
+    uuid: "a1",
+    timestamp: "2024-01-01T00:00:01.000Z",
+    message: {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "let me think" },
+        { type: "text", text: "on it" },
+        { type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } },
+      ],
+    },
+  },
+  {
+    type: "user",
+    uuid: "u2",
+    timestamp: "2024-01-01T00:00:02.000Z",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "t1", content: "file.txt", is_error: false }],
+    },
+  },
+];
+
+describe("claudeTranscriptToReplay", () => {
+  it.layer(NodeServices.layer)("transcript replay", (it) => {
+    it.effect("backfills user prompts AND assistant text as messages", () =>
+      Effect.gen(function* () {
+        const { messages } = yield* claudeTranscriptToReplay({ lines: LINES, threadId });
+        const user = messages.filter((m) => m.role === "user");
+        const assistant = messages.filter((m) => m.role === "assistant");
+        assert.equal(user.length, 1);
+        assert.equal(user[0]!.text, "do the thing");
+        // Assistant text goes through the reliable backfill path, not a delta.
+        assert.equal(assistant.length, 1);
+        assert.equal(assistant[0]!.text, "on it");
+      }),
+    );
+
+    it.effect("maps thinking, tool call + output to runtime events", () =>
+      Effect.gen(function* () {
+        const { events } = yield* claudeTranscriptToReplay({ lines: LINES, threadId });
+        const types = new Set(events.map((e) => e.type));
+
+        assert.isTrue(types.has("turn.started"), "opens a turn");
+        assert.isTrue(types.has("turn.completed"), "closes the turn");
+        assert.isTrue(types.has("item.started"), "tool call started");
+        assert.isTrue(types.has("item.completed"), "tool call completed");
+
+        // Bash classifies to command_execution and its output streams as command_output.
+        const started = events.find((e) => e.type === "item.started");
+        assert.equal(payloadOf(started).itemType, "command_execution");
+
+        const output = events.find(
+          (e) => e.type === "content.delta" && payloadOf(e).streamKind === "command_output",
+        );
+        assert.equal(payloadOf(output).delta, "file.txt");
+
+        const completed = events.find((e) => e.type === "item.completed");
+        assert.equal(payloadOf(completed).status, "completed");
+
+        // Reasoning still flows as a content delta; assistant text does NOT.
+        assert.isTrue(
+          events.some(
+            (e) => e.type === "content.delta" && payloadOf(e).streamKind === "reasoning_text",
+          ),
+          "thinking block becomes reasoning_text",
+        );
+        assert.isFalse(
+          events.some(
+            (e) => e.type === "content.delta" && payloadOf(e).streamKind === "assistant_text",
+          ),
+          "assistant text is a backfilled message, not a delta",
+        );
+      }),
+    );
+
+    it.effect("never stamps events at epoch when lines lack a timestamp", () =>
+      Effect.gen(function* () {
+        // Real Claude transcripts interleave timestamp-less rows (mode,
+        // last-prompt, ai-title, file-history-snapshot). A trailing one used to
+        // close the final turn at EPOCH, producing a 1970→now "Worked for …".
+        const lines: ReadonlyArray<unknown> = [
+          {
+            type: "user",
+            uuid: "u1",
+            timestamp: "2026-06-30T17:31:30.000Z",
+            message: { role: "user", content: "hi" },
+          },
+          {
+            type: "assistant",
+            uuid: "a1",
+            timestamp: "2026-06-30T17:31:31.000Z",
+            message: { role: "assistant", content: [{ type: "text", text: "yo" }] },
+          },
+          // No-timestamp trailing rows — must not drag any event back to 1970.
+          { type: "ai-title", uuid: "x1", message: { role: "assistant", content: [] } },
+          { type: "last-prompt", uuid: "x2" },
+        ];
+        const { events } = yield* claudeTranscriptToReplay({ lines, threadId });
+        const epochYear = "1970";
+        for (const e of events) {
+          assert.isFalse(
+            String(e.createdAt).startsWith(epochYear),
+            `event ${e.type} stamped at epoch (${e.createdAt})`,
+          );
+        }
+      }),
+    );
+
+    it.effect("drops harness-injected synthetic user turns", () =>
+      Effect.gen(function* () {
+        const lines: ReadonlyArray<unknown> = [
+          {
+            type: "user",
+            uuid: "u1",
+            timestamp: "2026-06-30T17:31:30.000Z",
+            message: { role: "user", content: "real human prompt" },
+          },
+          {
+            type: "user",
+            uuid: "u2",
+            timestamp: "2026-06-30T17:31:31.000Z",
+            message: {
+              role: "user",
+              content: "<task-notification>\n<task-id>abc</task-id>\nBackground command completed",
+            },
+          },
+          {
+            type: "user",
+            uuid: "u3",
+            timestamp: "2026-06-30T17:31:32.000Z",
+            message: { role: "user", content: "<system-reminder>do this</system-reminder>" },
+          },
+        ];
+        const { messages } = yield* claudeTranscriptToReplay({ lines, threadId });
+        const userPrompts = messages.filter((m) => m.role === "user");
+        assert.equal(userPrompts.length, 1);
+        assert.equal(userPrompts[0]!.text, "real human prompt");
+      }),
+    );
+
+    it.effect("extracts image refs and strips image markers from prompt text", () =>
+      Effect.gen(function* () {
+        const lines: ReadonlyArray<unknown> = [
+          {
+            type: "user",
+            uuid: "u1",
+            timestamp: "2026-06-30T17:31:30.000Z",
+            message: {
+              role: "user",
+              content: [
+                { type: "text", text: "[Image #1] look at this" },
+                { type: "text", text: "[Image: source: /home/x/.claude/image-cache/s/1.png]" },
+                {
+                  type: "image",
+                  source: { type: "base64", media_type: "image/jpeg", data: "AAAA" },
+                },
+              ],
+            },
+          },
+        ];
+        const { messages } = yield* claudeTranscriptToReplay({ lines, threadId });
+        const userPrompts = messages.filter((m) => m.role === "user");
+        assert.equal(userPrompts.length, 1);
+        // [Image #1] marker stripped, real text kept.
+        assert.equal(userPrompts[0]!.text, "look at this");
+        // Placeholder path preferred over inline base64 (original quality).
+        assert.equal(userPrompts[0]!.images.length, 1);
+        assert.equal(userPrompts[0]!.images[0]!.sourcePath, "/home/x/.claude/image-cache/s/1.png");
+        assert.equal(userPrompts[0]!.images[0]!.mimeType, "image/png");
+      }),
+    );
+
+    it.effect("completes a turn at the assistant's last activity, not the next prompt", () =>
+      Effect.gen(function* () {
+        const lines: ReadonlyArray<unknown> = [
+          {
+            type: "user",
+            uuid: "u1",
+            timestamp: "2026-06-30T10:00:00.000Z",
+            message: { role: "user", content: "do it" },
+          },
+          {
+            type: "assistant",
+            uuid: "a1",
+            timestamp: "2026-06-30T10:00:05.000Z",
+            message: { role: "assistant", content: [{ type: "text", text: "done" }] },
+          },
+          // Human comes back 3 hours later — must NOT count as turn duration.
+          {
+            type: "user",
+            uuid: "u2",
+            timestamp: "2026-06-30T13:00:00.000Z",
+            message: { role: "user", content: "next" },
+          },
+        ];
+        const { events } = yield* claudeTranscriptToReplay({ lines, threadId });
+        const completed = events.find((e) => e.type === "turn.completed");
+        // Completed at the assistant activity time (10:00:05), not 13:00.
+        assert.equal(completed?.createdAt, "2026-06-30T10:00:05.000Z");
+      }),
+    );
+
+    it.effect("a synthetic message between bursts splits the turn (no idle merge)", () =>
+      Effect.gen(function* () {
+        const lines: ReadonlyArray<unknown> = [
+          {
+            type: "user",
+            uuid: "u1",
+            timestamp: "2026-06-18T10:00:00.000Z",
+            message: { role: "user", content: "go" },
+          },
+          {
+            type: "assistant",
+            uuid: "a1",
+            timestamp: "2026-06-18T10:00:01.000Z",
+            message: { role: "assistant", content: [{ type: "text", text: "first" }] },
+          },
+          // Harness notification — NOT a human prompt, but still ends the burst.
+          {
+            type: "user",
+            uuid: "x1",
+            timestamp: "2026-06-18T10:00:02.000Z",
+            message: { role: "user", content: "<task-notification>done</task-notification>" },
+          },
+          // Next burst 12 days later must be its OWN turn, not merged.
+          {
+            type: "assistant",
+            uuid: "a2",
+            timestamp: "2026-06-30T10:00:00.000Z",
+            message: { role: "assistant", content: [{ type: "text", text: "second" }] },
+          },
+        ];
+        const { events } = yield* claudeTranscriptToReplay({ lines, threadId });
+        const started = events.filter((e) => e.type === "turn.started").length;
+        // Two distinct bursts -> two turns (not one spanning the 12-day gap).
+        assert.equal(started, 2);
+      }),
+    );
+
+    it.effect("emits only a settle event for an empty transcript", () =>
+      Effect.gen(function* () {
+        const { events, messages } = yield* claudeTranscriptToReplay({ lines: [], threadId });
+        // No conversation, but the thread must still settle to "stopped".
+        assert.equal(messages.length, 0);
+        assert.deepEqual(
+          events.map((e) => e.type),
+          ["session.exited"],
+        );
+      }),
+    );
+  });
+});

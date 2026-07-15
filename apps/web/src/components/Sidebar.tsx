@@ -181,6 +181,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "./ui/sidebar";
+import { AgentsviewSection } from "./AgentsviewSection";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useOpenAddProjectCommandPalette } from "../commandPaletteContext";
 import {
@@ -3100,6 +3101,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
           </div>
         )}
       </SidebarGroup>
+      <AgentsviewSection />
     </SidebarContent>
   );
 });

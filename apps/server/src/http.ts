@@ -3,6 +3,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
+  ThreadId,
 } from "@t3tools/contracts";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
 import * as Data from "effect/Data";
@@ -36,6 +37,12 @@ import {
   failEnvironmentInternal,
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
+import {
+  importExternalSession,
+  syncExternalSession,
+} from "./externalSessions/ExternalSessionImport.ts";
+import * as ExternalImportStatus from "./externalSessions/ExternalImportStatus.ts";
+import * as RecentExternalSessions from "./externalSessions/RecentExternalSessions.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
@@ -160,6 +167,177 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
           HttpServerResponse.text("Trace export failed.", { status: 502 }),
         ),
       );
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+const RESUME_ROUTE_PREFIX = "/api/resume";
+
+/**
+ * Deep-link endpoint: GET /api/resume/<provider>/<sessionId>
+ *
+ * Imports an external (non-T3) agent session via agentsview, binds it to a
+ * resumable T3 thread, and 302-redirects the browser straight to that thread.
+ * Auth is cookie-based (same as the rest of the API), so clicking the link in
+ * an already-signed-in T3 browser session just works.
+ */
+export const resumeRouteLayer = HttpRouter.add(
+  "GET",
+  `${RESUME_ROUTE_PREFIX}/*`,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+    const suffix = url.value.pathname.slice(`${RESUME_ROUTE_PREFIX}/`.length);
+    const separatorIndex = suffix.indexOf("/");
+    if (separatorIndex <= 0) {
+      return HttpServerResponse.text("Expected /api/resume/<provider>/<sessionId>.", {
+        status: 400,
+      });
+    }
+    let provider: string;
+    let sessionId: string;
+    try {
+      provider = decodeURIComponent(suffix.slice(0, separatorIndex));
+      sessionId = decodeURIComponent(suffix.slice(separatorIndex + 1));
+    } catch {
+      return HttpServerResponse.text("Malformed URL encoding.", { status: 400 });
+    }
+
+    const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
+    const environmentId = yield* serverEnvironment.getEnvironmentId;
+    const importStatus = yield* ExternalImportStatus.ExternalImportStatus;
+
+    return yield* importExternalSession({ provider, sessionId }).pipe(
+      // The fast phase (validate, create/reset the thread shell, bind) runs
+      // here so errors surface and the thread exists; the slow hydration is
+      // forked as a daemon so the browser is redirected immediately and watches
+      // the thread populate live. The thread is flagged "importing" until done.
+      Effect.flatMap((result) =>
+        importStatus
+          .begin(result.threadId)
+          .pipe(
+            Effect.andThen(
+              result.hydrate.pipe(
+                Effect.ensuring(importStatus.end(result.threadId)),
+                Effect.forkDetach,
+              ),
+            ),
+            Effect.as(
+              HttpServerResponse.redirect(`/${environmentId}/${result.threadId}`, { status: 302 }),
+            ),
+          ),
+      ),
+      Effect.catchTag("ExternalSessionImportError", (error) =>
+        Effect.succeed(HttpServerResponse.text(error.reason, { status: 422 })),
+      ),
+    );
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+/**
+ * GET /api/external-sessions/recent — the warm, cached "last 7 days, by
+ * project, recent-first" slice for the AGENTSVIEW sidebar section. Served from
+ * the in-memory cache so it never blocks on the agentsview daemon.
+ */
+export const externalSessionsRouteLayer = HttpRouter.add(
+  "GET",
+  "/api/external-sessions/recent",
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    const recent = yield* RecentExternalSessions.RecentExternalSessions;
+    const snapshot = yield* recent.get;
+    return HttpServerResponse.jsonUnsafe(snapshot);
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+/**
+ * GET /api/external-sessions/import-status — thread ids whose external-session
+ * import is still hydrating in the background, so the web client can show an
+ * "Importing…" affordance instead of treating partial content as final.
+ */
+export const externalImportStatusRouteLayer = HttpRouter.add(
+  "GET",
+  "/api/external-sessions/import-status",
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    const importStatus = yield* ExternalImportStatus.ExternalImportStatus;
+    const threadIds = yield* importStatus.current;
+    return HttpServerResponse.jsonUnsafe({ threadIds });
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+/**
+ * GET /api/external-sessions/search?q=… — full-text search across ALL external
+ * sessions (the slow path beyond the warm 7-day cache), for the AGENTSVIEW
+ * "Older than 7 days…" affordance. Returns a flat, recent-first row list.
+ */
+export const externalSessionsSearchRouteLayer = HttpRouter.add(
+  "GET",
+  "/api/external-sessions/search",
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    const query = Option.isSome(url) ? (url.value.searchParams.get("q") ?? "") : "";
+    const recent = yield* RecentExternalSessions.RecentExternalSessions;
+    const sessions = yield* recent.search(query);
+    return HttpServerResponse.jsonUnsafe({ sessions });
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+/**
+ * GET /api/external-sessions/sync?threadId=… — incrementally sync an imported
+ * Claude thread with its on-disk transcript (append messages newer than the
+ * sync marker). The web polls this while such a thread is open so work done via
+ * the CLI shows up without a manual re-import. Cheap no-op when nothing changed
+ * or the thread isn't a sync-eligible import.
+ */
+export const externalSessionsSyncRouteLayer = HttpRouter.add(
+  "GET",
+  "/api/external-sessions/sync",
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    const rawThreadId = Option.isSome(url) ? (url.value.searchParams.get("threadId") ?? "") : "";
+    if (rawThreadId.trim().length === 0) {
+      return HttpServerResponse.jsonUnsafe({ synced: false, added: 0 });
+    }
+    const result = yield* syncExternalSession({ threadId: ThreadId.make(rawThreadId) });
+    return HttpServerResponse.jsonUnsafe(result);
   }).pipe(
     Effect.catchTags({
       EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,

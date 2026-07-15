@@ -53,6 +53,23 @@ import * as Option from "effect/Option";
 
 const PROVIDER = ProviderDriverKind.make("opencode");
 
+/**
+ * Extract the native OpenCode session id from a resume cursor, if present.
+ * Imported external sessions store `{ sessionId }`; live T3 sessions have no
+ * cursor and create a fresh session instead.
+ */
+function readOpenCodeResumeSessionId(resumeCursor: unknown): string | undefined {
+  if (!resumeCursor || typeof resumeCursor !== "object") {
+    return undefined;
+  }
+  const candidate = (resumeCursor as { sessionId?: unknown }).sessionId;
+  if (typeof candidate !== "string") {
+    return undefined;
+  }
+  const trimmed = candidate.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 interface OpenCodeTurnSnapshot {
   readonly id: TurnId;
   readonly items: Array<unknown>;
@@ -1070,23 +1087,43 @@ export function makeOpenCodeAdapter(
                   }),
                 );
               }
-              const openCodeSession = yield* runOpenCodeSdk("session.create", () =>
-                client.session.create({
-                  title: `T3 Code ${input.threadId}`,
-                  permission: buildOpenCodePermissionRules(input.runtimeMode),
-                }),
-              );
-              if (!openCodeSession.data) {
-                return yield* new OpenCodeRuntimeError({
-                  operation: "session.create",
-                  detail: "OpenCode session.create returned no session payload.",
-                });
+              // Resuming an existing on-disk OpenCode session (possibly one
+              // started outside T3) means reusing its native session id rather
+              // than creating a fresh one. Everything downstream keys off
+              // `openCodeSession.id`, so we only need that field.
+              // ponytail: we trust the id exists in the server's storage for
+              // this directory; a bad id surfaces as a clear prompt error on
+              // the first turn rather than being validated up front.
+              const resumeSessionId = readOpenCodeResumeSessionId(input.resumeCursor);
+              let openCodeSession: { readonly id: string };
+              // Track whether WE created the native session: a resumed session
+              // is owned by the original CLI run, so race-loser cleanup must
+              // never abort it (that would destroy the user's conversation).
+              let createdNewOpenCodeSession = false;
+              if (resumeSessionId !== undefined) {
+                openCodeSession = { id: resumeSessionId };
+              } else {
+                const created = yield* runOpenCodeSdk("session.create", () =>
+                  client.session.create({
+                    title: `T3 Code ${input.threadId}`,
+                    permission: buildOpenCodePermissionRules(input.runtimeMode),
+                  }),
+                );
+                if (!created.data) {
+                  return yield* new OpenCodeRuntimeError({
+                    operation: "session.create",
+                    detail: "OpenCode session.create returned no session payload.",
+                  });
+                }
+                openCodeSession = created.data;
+                createdNewOpenCodeSession = true;
               }
               return {
                 sessionScope,
                 server,
                 client,
-                openCodeSession: openCodeSession.data,
+                openCodeSession,
+                createdNewOpenCodeSession,
               };
             }).pipe(Effect.provideService(Scope.Scope, sessionScope)),
           );
@@ -1103,11 +1140,15 @@ export function makeOpenCodeAdapter(
         if (raceWinner) {
           // Another call won the race – clean up the session we just created
           // (including the remote SDK session) and return the existing one.
-          yield* runOpenCodeSdk("session.abort", () =>
-            started.client.session.abort({
-              sessionID: started.openCodeSession.id,
-            }),
-          ).pipe(Effect.ignore);
+          // Only abort the native session if WE created it; a resumed session
+          // belongs to the original CLI run and must be left intact.
+          if (started.createdNewOpenCodeSession) {
+            yield* runOpenCodeSdk("session.abort", () =>
+              started.client.session.abort({
+                sessionID: started.openCodeSession.id,
+              }),
+            ).pipe(Effect.ignore);
+          }
           yield* Scope.close(started.sessionScope, Exit.void).pipe(Effect.ignore);
           return raceWinner.session;
         }

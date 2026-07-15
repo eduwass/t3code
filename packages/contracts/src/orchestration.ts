@@ -785,6 +785,44 @@ const ThreadRevertCompleteCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+export const ThreadHistoryBackfillMessage = Schema.Struct({
+  messageId: MessageId,
+  role: OrchestrationMessageRole,
+  text: Schema.String,
+  createdAt: IsoDateTime,
+  // Image attachments recovered from an imported transcript (already persisted
+  // to the attachments store by the importer; ids reference those files).
+  attachments: Schema.optional(Schema.Array(ChatAttachment)),
+});
+export type ThreadHistoryBackfillMessage = typeof ThreadHistoryBackfillMessage.Type;
+
+/**
+ * Append completed historical messages (e.g. the transcript of an imported
+ * external session) to a thread, without running a turn or touching any
+ * provider/checkpoint machinery. Internal-only: emitted server-side during
+ * external-session import, never dispatched by clients.
+ */
+const ThreadHistoryBackfillCommand = Schema.Struct({
+  type: Schema.Literal("thread.history.backfill"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messages: Schema.Array(ThreadHistoryBackfillMessage),
+  createdAt: IsoDateTime,
+});
+
+/**
+ * Wipe all conversation content (messages, activities, turns, session state,
+ * proposed plans) from a thread, keeping the thread shell. Internal-only:
+ * emitted during external-session re-import so a stale/partial prior import is
+ * rebuilt from scratch instead of leaving incorrect content in place.
+ */
+const ThreadContentResetCommand = Schema.Struct({
+  type: Schema.Literal("thread.content.reset"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  createdAt: IsoDateTime,
+});
+
 const InternalOrchestrationCommand = Schema.Union([
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
@@ -793,6 +831,8 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
+  ThreadHistoryBackfillCommand,
+  ThreadContentResetCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -814,6 +854,8 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
   "thread.message-sent",
+  "thread.history-backfilled",
+  "thread.content-reset",
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
   "thread.approval-response-requested",
@@ -922,6 +964,15 @@ export const ThreadMessageSentPayload = Schema.Struct({
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+});
+
+export const ThreadHistoryBackfilledPayload = Schema.Struct({
+  threadId: ThreadId,
+  messages: Schema.Array(ThreadHistoryBackfillMessage),
+});
+
+export const ThreadContentResetPayload = Schema.Struct({
+  threadId: ThreadId,
 });
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
@@ -1075,6 +1126,16 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.message-sent"),
     payload: ThreadMessageSentPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.history-backfilled"),
+    payload: ThreadHistoryBackfilledPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.content-reset"),
+    payload: ThreadContentResetPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

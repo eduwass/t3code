@@ -11,6 +11,8 @@ import * as Schema from "effect/Schema";
 import { toProjectorDecodeError, type OrchestrationProjectorDecodeError } from "./Errors.ts";
 import {
   MessageSentPayloadSchema,
+  ThreadHistoryBackfilledPayload,
+  ThreadContentResetPayload,
   ProjectCreatedPayload,
   ProjectDeletedPayload,
   ProjectMetaUpdatedPayload,
@@ -440,6 +442,71 @@ export function projectEvent(
           }),
         };
       });
+
+    case "thread.history-backfilled":
+      return Effect.gen(function* () {
+        const payload = yield* decodeForEvent(
+          ThreadHistoryBackfilledPayload,
+          event.payload,
+          event.type,
+          "payload",
+        );
+        const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+        if (!thread) {
+          return nextBase;
+        }
+        const existingIds = new Set(thread.messages.map((entry) => entry.id));
+        const historical: Array<OrchestrationMessage> = [];
+        for (const message of payload.messages) {
+          if (existingIds.has(message.messageId)) {
+            continue;
+          }
+          historical.push(
+            yield* decodeForEvent(
+              OrchestrationMessage,
+              {
+                id: message.messageId,
+                role: message.role,
+                text: message.text,
+                ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
+                turnId: null,
+                streaming: false,
+                createdAt: message.createdAt,
+                updatedAt: message.createdAt,
+              },
+              event.type,
+              "message",
+            ),
+          );
+        }
+        if (historical.length === 0) {
+          return nextBase;
+        }
+        // Backfilled history precedes any live messages; keep chronological order.
+        const messages = [...historical, ...thread.messages].slice(-MAX_THREAD_MESSAGES);
+        return {
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            messages,
+            updatedAt: event.occurredAt,
+          }),
+        };
+      });
+
+    case "thread.content-reset":
+      return decodeForEvent(ThreadContentResetPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            messages: [],
+            activities: [],
+            proposedPlans: [],
+            checkpoints: [],
+            session: null,
+            updatedAt: event.occurredAt,
+          }),
+        })),
+      );
 
     case "thread.session-set":
       return Effect.gen(function* () {
