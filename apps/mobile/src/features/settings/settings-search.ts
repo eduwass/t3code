@@ -73,6 +73,12 @@ const SETTINGS_SEARCH_TERMS = {
     msg("microphone order", { $context: "settings search keyword" }),
     msg("bluetooth", { $context: "settings search keyword" }),
   ],
+  SettingsVoiceInput: [
+    msg("language", { $context: "settings search keyword" }),
+    msg("transcription", { $context: "settings search keyword" }),
+    msg("dictation", { $context: "settings search keyword" }),
+    msg("speech", { $context: "settings search keyword" }),
+  ],
   SettingsScheduledTasks: [
     msg("automations", { $context: "settings search keyword" }),
     msg("schedule", { $context: "settings search keyword" }),

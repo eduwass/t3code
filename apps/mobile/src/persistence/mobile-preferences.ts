@@ -169,6 +169,8 @@ export interface Preferences {
   /** The client `language` setting: a locale code or "system". Unset means English. */
   readonly language?: string;
   readonly microphones?: ReadonlyArray<MicrophoneEntry>;
+  /** Locale for on-device voice input. Unset follows the app's locale. iOS only. */
+  readonly voiceInputLanguage?: string;
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
   readonly toolCallVisibility?: ToolCallVisibility;
@@ -263,6 +265,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     followUpBehavior?: FollowUpBehavior;
     language?: string;
     microphones?: ReadonlyArray<MicrophoneEntry>;
+    voiceInputLanguage?: string;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     toolCallVisibility?: ToolCallVisibility;
@@ -399,6 +402,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
         ? [{ kind: entry.kind, uid: entry.uid, name: entry.name }]
         : [];
     });
+  }
+  if (typeof parsed.voiceInputLanguage === "string") {
+    preferences.voiceInputLanguage = parsed.voiceInputLanguage;
   }
   if (typeof parsed.projectGroupingEnabled === "boolean") {
     preferences.projectGroupingEnabled = parsed.projectGroupingEnabled;
