@@ -76,6 +76,8 @@ export interface Preferences {
   readonly followUpBehavior?: FollowUpBehavior;
   /** Microphone kinds and remembered devices, most preferred first. iOS only. */
   readonly microphones?: ReadonlyArray<MicrophoneEntry>;
+  /** Locale for on-device voice input. Unset follows the app's locale. iOS only. */
+  readonly voiceInputLanguage?: string;
   /** @deprecated Kept temporarily so older OTA bundles retain the selected mode. */
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
@@ -153,6 +155,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     composerEnterBehavior?: ComposerEnterBehavior;
     followUpBehavior?: FollowUpBehavior;
     microphones?: ReadonlyArray<MicrophoneEntry>;
+    voiceInputLanguage?: string;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     planModeEnabled?: boolean;
@@ -240,6 +243,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
         ? [{ kind: entry.kind, uid: entry.uid, name: entry.name }]
         : [];
     });
+  }
+  if (typeof parsed.voiceInputLanguage === "string") {
+    preferences.voiceInputLanguage = parsed.voiceInputLanguage;
   }
   if (typeof parsed.projectGroupingEnabled === "boolean") {
     preferences.projectGroupingEnabled = parsed.projectGroupingEnabled;
