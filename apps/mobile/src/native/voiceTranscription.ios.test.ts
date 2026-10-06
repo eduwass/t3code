@@ -240,6 +240,16 @@ describe("getLocalVoiceTranscriber", () => {
     },
   );
 
+  it("uses the chosen language instead of the app's locale", async () => {
+    mocks.prepare.mockResolvedValue("es-ES");
+    const prepared = await (await getLocalVoiceTranscriber("es-ES"))!.prepare({
+      signal: new AbortController().signal,
+    });
+
+    expect(mocks.prepare).toHaveBeenCalledWith("es-ES");
+    expect(prepared.locale).toBe("es-ES");
+  });
+
   it("does not start native transcription after cancellation during a file read", async () => {
     const enteredRead = Promise.withResolvers<void>();
     const readResult = Promise.withResolvers<ArrayBuffer>();

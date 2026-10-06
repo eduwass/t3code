@@ -19,6 +19,7 @@ import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/
 import { getNativeShowcaseScene } from "../showcase/nativeShowcaseScene";
 import {
   voiceInputBlocksSubmission,
+  VoiceTranscriptionError,
   type VoiceTranscriber,
 } from "@t3tools/client-runtime/voice-input";
 import { createLazyVoiceRecorder } from "./lazyVoiceRecorder";
@@ -124,7 +125,24 @@ const voiceInputAtom = Atom.make((get) => {
       const route = registry.get(voiceRouteAtom);
       if (route) return route.transcriber;
       const transcriber = registry.get(localVoiceTranscriberAtom);
-      return transcriber === "checking" ? null : transcriber;
+      if (transcriber === "checking" || transcriber === null) return null;
+      const preferences = registry.get(mobilePreferencesAtom);
+      const language = AsyncResult.isSuccess(preferences)
+        ? preferences.value.voiceInputLanguage
+        : undefined;
+      if (!language) return transcriber;
+      return {
+        prepare: async (options) => {
+          const chosen = await getLocalVoiceTranscriber(language);
+          if (!chosen) {
+            throw new VoiceTranscriptionError({
+              code: "unavailable",
+              message: "Voice transcription is not available for the chosen language.",
+            });
+          }
+          return chosen.prepare(options);
+        },
+      };
     },
     requestPermission: permission.requestPermission,
     configureRecording: async () => {
