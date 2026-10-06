@@ -29,7 +29,6 @@ import {
   preferredMicrophoneInput,
   rememberMicrophones,
 } from "../../lib/microphonePriority";
-import { getLocalVoiceTranscriber } from "../../native/voiceTranscription";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { getNativeShowcaseScene } from "../showcase/nativeShowcaseScene";
 import {
@@ -40,6 +39,8 @@ import {
 import { createLazyVoiceRecorder, type LazyVoiceRecorder } from "./lazyVoiceRecorder";
 import { normalizeVoiceInputDecibels, VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
 import { VoiceInputSession } from "./voiceInputSession";
+import { getVoiceTranscriber, type VoiceTranscriberChoice } from "./voiceTranscriber";
+import { useCloudTranscriptionSettings } from "./voiceTranscriptionSettings";
 
 const INITIAL_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
 const VOICE_METERING_INTERVAL_MS = 80;
@@ -121,13 +122,16 @@ function useVoiceInputRuntime() {
   const audioLevelsRef = useRef(Array<number>(VOICE_WAVEFORM_SAMPLE_COUNT).fill(0));
   const audioLevels = useSharedValue(audioLevelsRef.current);
   const sessionRef = useRef<VoiceInputSession | null>(null);
-  const language = useAtomValue(mobilePreferencesAtom, (result) =>
-    AsyncResult.isSuccess(result) ? result.value.voiceInputLanguage : undefined,
-  );
-  const languageRef = useRef(language);
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const preferences = AsyncResult.isSuccess(preferencesResult) ? preferencesResult.value : {};
+  const cloud = preferences.voiceInputCloud === true;
+  const language = preferences.voiceInputLanguage;
+  // Re-renders when a cloud service is saved or removed, so availability stays current.
+  useCloudTranscriptionSettings();
+  const choiceRef = useRef<VoiceTranscriberChoice>({ cloud, language });
   useEffect(() => {
-    languageRef.current = language;
-  }, [language]);
+    choiceRef.current = { cloud, language };
+  }, [cloud, language]);
   const recorderRef = useRef<LazyVoiceRecorder<RecorderState> | null>(null);
 
   if (!sessionRef.current || !recorderRef.current) {
@@ -160,7 +164,7 @@ function useVoiceInputRuntime() {
     recorderRef.current = recorder;
     sessionRef.current = new VoiceInputSession({
       recorder,
-      getTranscriber: () => getLocalVoiceTranscriber(languageRef.current),
+      getTranscriber: () => getVoiceTranscriber(choiceRef.current),
       requestPermission: async () => {
         const permission = await requestRecordingPermissionsAsync();
         return { granted: permission.granted, canAskAgain: permission.canAskAgain };
@@ -256,7 +260,8 @@ function useVoiceInputRuntime() {
   const cancel = useCallback(() => controller.cancel(), [controller]);
 
   return {
-    isAvailable: getLocalVoiceTranscriber() !== null || getNativeShowcaseScene() !== null,
+    isAvailable:
+      getVoiceTranscriber({ cloud, language }) !== null || getNativeShowcaseScene() !== null,
     state,
     audioLevels,
     elapsedSeconds,

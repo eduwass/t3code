@@ -193,8 +193,13 @@ for example, put **Other Bluetooth** above your AirPods so a new headset is pref
 while the AirPods microphone stays low. By default, CarPlay comes after the built-in
 microphone.
 
-Transcription runs on your device. T3 Code deletes the temporary audio after
-transcription or cancellation; only the message text is sent when you submit.
+By default, transcription runs on your device. To use a cloud service instead, open
+**Settings → Voice input**, choose **Cloud service**, and enter an OpenAI-compatible
+transcription endpoint, model, and API key; the service detects the spoken language.
+Recordings are then uploaded to that service, and the key stays in the device's secure
+storage, also while you switch back to on-device transcription. T3 Code deletes the
+temporary audio after transcription or cancellation; only the message text is sent
+when you submit.
 
 ## Queued messages
 
