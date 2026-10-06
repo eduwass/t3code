@@ -195,6 +195,7 @@ sent until you choose one. See [Voice input](./voice-input.md).
 Use the composer's microphone to record, then confirm to transcribe. Text is
 inserted where your selection was when recording started, ready for you to review
 and edit before sending.
+To dictate on iPhone in a language other than the app's, choose it in **Settings → Voice input**.
 
 By default, audio stays on the phone. Local transcription needs a supported iPhone
 with iOS 26 or later, or Android 12 or later with compatible Google speech services.
