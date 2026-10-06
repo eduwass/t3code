@@ -44,8 +44,10 @@ function wrapError(
   return new VoiceTranscriptionError({ code, message, cause });
 }
 
-export async function getLocalVoiceTranscriber(): Promise<VoiceTranscriber | null> {
-  const locales = getPreferredLocales();
+export async function getLocalVoiceTranscriber(
+  language?: string,
+): Promise<VoiceTranscriber | null> {
+  const locales = language ? [language] : getPreferredLocales();
   // Availability is a device and OS check; which languages have a model only `prepare` knows.
   if (!native?.isAppleSpeechAvailable?.()) return null;
   return { prepare: (options) => prepareVoiceTranscription(native, locales, options) };
