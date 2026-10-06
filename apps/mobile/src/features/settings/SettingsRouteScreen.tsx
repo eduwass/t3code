@@ -265,6 +265,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
           : []),
         page("SettingsKeyboard", "keyboard", gt("Keyboard")),
         page("SettingsVoice", "mic", gt("Voice")),
+        ...(Platform.OS === "ios" ? [page("SettingsVoiceInput", "mic", gt("Voice input"))] : []),
       ],
     },
     {
