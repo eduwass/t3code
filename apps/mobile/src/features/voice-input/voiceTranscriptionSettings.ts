@@ -9,8 +9,8 @@ export type CloudTranscriptionSettings = {
 };
 
 export const DEFAULT_CLOUD_TRANSCRIPTION = {
-  url: "https://api.openai.com/v1/audio/transcriptions",
-  model: "gpt-transcribe",
+  url: "https://api.groq.com/openai/v1/audio/transcriptions",
+  model: "whisper-large-v3-turbo",
 } as const;
 
 const STORAGE_KEY = "t3code.voice-transcription.cloud";
