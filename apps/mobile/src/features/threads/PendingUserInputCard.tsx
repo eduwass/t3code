@@ -24,6 +24,7 @@ import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
 import { useLiveThreadLinkLabels } from "../../state/entities";
+import { useGlobalVoiceInput } from "../voice-input/VoiceInputProvider";
 import {
   isPendingUserInputOptionSelected,
   type PendingUserInputDraftAnswer,
@@ -102,6 +103,10 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
       ])
       .join(" "),
   );
+  // A dictated answer lands only after transcription finishes; submitting
+  // before then would send the answer without it.
+  const voice = useGlobalVoiceInput();
+  const dictating = voice.isBusy && voice.ownerKey?.startsWith("question:") === true;
 
   const { cardCoverage, cardProgress, maxHeight } = props;
   const barHeightRef = useRef(0);
@@ -307,10 +312,12 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         })}
       </ScrollView>
       <Button
-        label="Submit answers"
+        label={dictating ? "Waiting for dictation…" : "Submit answers"}
         fullWidth
         tone={props.answers ? "primary" : "secondary"}
-        disabled={!props.canOperateThread || responseDisabled || props.answers === null}
+        disabled={
+          !props.canOperateThread || responseDisabled || dictating || props.answers === null
+        }
         onPress={() => void props.onSubmit()}
       />
       {props.pendingUserInput.dismissible ? (

@@ -17,6 +17,7 @@ import { useNavigation } from "@react-navigation/native";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
 import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import { useServerConfigs } from "../../state/entities";
+import { QuestionDictation } from "../voice-input/QuestionDictation";
 import { appAtomRegistry } from "../../state/atom-registry";
 import {
   appendComposerDraftAttachments,
@@ -66,10 +67,21 @@ export function QuestionAttachments(props: {
   useEffect(() => () => releaseFocus(), []);
   // A controlled value makes Fabric rebuild the native text on every keystroke, which discards
   // iOS's pending autocorrection. The input owns its text; the only outside write is an option
-  // selection clearing the draft.
+  // selection clearing the draft, and dictation, which remounts the input seeded with its text.
   const inputRef = useRef<TextInputInstance>(null);
-  const [initialText] = useState(props.value);
+  const [initialText, setInitialText] = useState(props.value);
+  const [inputGeneration, setInputGeneration] = useState(0);
   const nativeText = useRef(props.value);
+  const setDictatedText = (text: string) => {
+    nativeText.current = text;
+    if (focusedRef.current) {
+      focusedRef.current = false;
+      onInputFocusChange?.(false);
+    }
+    setInitialText(text);
+    setInputGeneration((generation) => generation + 1);
+    props.onChangeText(text);
+  };
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes an option selection's cleared draft into the uncontrolled native input
   useEffect(() => {
     if (props.value !== "" || nativeText.current === "") return;
@@ -205,29 +217,39 @@ export function QuestionAttachments(props: {
       />
       <FilePreviewModal source={previewFile} onRequestClose={() => setPreviewFile(null)} />
       <VideoPreviewModal source={previewVideo} onRequestClose={() => setPreviewVideo(null)} />
-      <TextInputWrapper onPaste={paste}>
-        <TextInput
-          ref={inputRef}
-          defaultValue={initialText}
-          multiline={props.question.initialAnswer !== undefined}
-          submitBehavior={props.question.initialAnswer !== undefined ? "newline" : undefined}
-          editable={!props.disabled}
-          onChangeText={(text) => {
-            nativeText.current = text;
-            props.onChangeText(text);
-          }}
-          onFocus={() => {
-            focusedRef.current = true;
-            onInputFocusChange?.(true);
-          }}
-          onBlur={() => {
-            focusedRef.current = false;
-            onInputFocusChange?.(false);
-          }}
-          placeholder="Or type a custom answer"
-          className="min-h-[54px] rounded-2xl border border-input-border bg-input px-3.5 py-3 font-sans text-base text-foreground"
+      {/* Explicitly relative so the idle microphone pins to the answer box's corner. */}
+      <View className="relative">
+        <TextInputWrapper onPaste={paste}>
+          <TextInput
+            key={inputGeneration}
+            ref={inputRef}
+            defaultValue={initialText}
+            multiline={props.question.initialAnswer !== undefined}
+            submitBehavior={props.question.initialAnswer !== undefined ? "newline" : undefined}
+            editable={!props.disabled}
+            onChangeText={(text) => {
+              nativeText.current = text;
+              props.onChangeText(text);
+            }}
+            onFocus={() => {
+              focusedRef.current = true;
+              onInputFocusChange?.(true);
+            }}
+            onBlur={() => {
+              focusedRef.current = false;
+              onInputFocusChange?.(false);
+            }}
+            placeholder="Or type a custom answer"
+            className="min-h-[54px] rounded-2xl border border-input-border bg-input py-3 pr-12 pl-3.5 font-sans text-base text-foreground"
+          />
+        </TextInputWrapper>
+        <QuestionDictation
+          ownerKey={`question:${key}`}
+          value={props.value}
+          onChangeText={setDictatedText}
+          disabled={props.disabled}
         />
-      </TextInputWrapper>
+      </View>
     </View>
   );
 }
