@@ -17,6 +17,7 @@ import { useNavigation } from "@react-navigation/native";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
 import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import { useServerConfigs } from "../../state/entities";
+import { QuestionDictation } from "../voice-input/QuestionDictation";
 import { appAtomRegistry } from "../../state/atom-registry";
 import {
   appendComposerDraftAttachments,
@@ -201,25 +202,34 @@ export function QuestionAttachments(props: {
       />
       <FilePreviewModal source={previewFile} onRequestClose={() => setPreviewFile(null)} />
       <VideoPreviewModal source={previewVideo} onRequestClose={() => setPreviewVideo(null)} />
-      <TextInputWrapper onPaste={paste}>
-        <TextInput
+      {/* Explicitly relative so the idle microphone pins to the answer box's corner. */}
+      <View className="relative">
+        <TextInputWrapper onPaste={paste}>
+          <TextInput
+            value={props.value}
+            multiline={props.question.initialAnswer !== undefined}
+            submitBehavior={props.question.initialAnswer !== undefined ? "newline" : undefined}
+            editable={!props.disabled}
+            onChangeText={props.onChangeText}
+            onFocus={() => {
+              focusedRef.current = true;
+              onInputFocusChange?.(true);
+            }}
+            onBlur={() => {
+              focusedRef.current = false;
+              onInputFocusChange?.(false);
+            }}
+            placeholder="Or type a custom answer"
+            className="min-h-[54px] rounded-2xl border border-input-border bg-input py-3 pr-12 pl-3.5 font-sans text-base text-foreground"
+          />
+        </TextInputWrapper>
+        <QuestionDictation
+          ownerKey={`question:${key}`}
           value={props.value}
-          multiline={props.question.initialAnswer !== undefined}
-          submitBehavior={props.question.initialAnswer !== undefined ? "newline" : undefined}
-          editable={!props.disabled}
           onChangeText={props.onChangeText}
-          onFocus={() => {
-            focusedRef.current = true;
-            onInputFocusChange?.(true);
-          }}
-          onBlur={() => {
-            focusedRef.current = false;
-            onInputFocusChange?.(false);
-          }}
-          placeholder="Or type a custom answer"
-          className="min-h-[54px] rounded-2xl border border-input-border bg-input px-3.5 py-3 font-sans text-base text-foreground"
+          disabled={props.disabled}
         />
-      </TextInputWrapper>
+      </View>
     </View>
   );
 }
