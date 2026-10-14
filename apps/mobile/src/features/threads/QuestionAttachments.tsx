@@ -14,6 +14,7 @@ import { useNavigation } from "@react-navigation/native";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
 import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import { useServerConfigs } from "../../state/entities";
+import { QuestionDictation } from "../voice-input/QuestionDictation";
 import { appAtomRegistry } from "../../state/atom-registry";
 import {
   appendComposerDraftAttachments,
@@ -196,9 +197,15 @@ export function QuestionAttachments(props: {
           onFocus={() => props.onInputFocusChange?.(true)}
           onBlur={() => props.onInputFocusChange?.(false)}
           placeholder="Or type a custom answer"
-          className="min-h-[54px] rounded-2xl border border-input-border bg-input px-3.5 py-3 font-sans text-base text-foreground"
+          className="min-h-[54px] rounded-2xl border border-input-border bg-input py-3 pr-12 pl-3.5 font-sans text-base text-foreground"
         />
       </TextInputWrapper>
+      <QuestionDictation
+        ownerKey={`question:${key}`}
+        value={props.value}
+        onChangeText={props.onChangeText}
+        disabled={props.disabled}
+      />
     </View>
   );
 }
