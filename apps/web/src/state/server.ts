@@ -106,9 +106,19 @@ export const primaryServerProvidersAtom = Atom.make(
     get(primaryServerConfigAtom)?.providers ?? EMPTY_SERVER_PROVIDERS,
 ).pipe(Atom.withLabel("web-primary-server-providers"));
 
-export const primaryServerKeybindingsAtom = Atom.make((get): ServerConfig["keybindings"] =>
-  mergeWithDefaultKeybindings(get(primaryServerConfigAtom)?.keybindings ?? []),
-).pipe(Atom.withLabel("web-primary-server-keybindings"));
+// With the local environment turned off there is no primary server; the
+// shortcuts then come from the first connected server, the one Settings edits,
+// instead of falling back to the defaults.
+export const primaryServerKeybindingsAtom = Atom.make((get): ServerConfig["keybindings"] => {
+  let config = get(primaryServerConfigAtom);
+  if (config === null) {
+    for (const [environmentId] of get(environmentCatalog.catalogValueAtom).entries) {
+      config = get(serverEnvironment.configValueAtom(environmentId));
+      if (config !== null) break;
+    }
+  }
+  return mergeWithDefaultKeybindings(config?.keybindings ?? []);
+}).pipe(Atom.withLabel("web-primary-server-keybindings"));
 
 export const primaryServerAvailableEditorsAtom = Atom.make(
   (get): ReadonlyArray<EditorId> =>
