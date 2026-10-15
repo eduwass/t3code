@@ -98,6 +98,7 @@ it.effect.each([false, true])(
           } as DesktopAppIdentity.DesktopAppIdentity["Service"]),
           Effect.provideService(ElectronApp.ElectronApp, {
             setPath: () => Effect.void,
+            on: () => Effect.void,
             whenReady: record("ready"),
           } as unknown as ElectronApp.ElectronApp["Service"]),
           Effect.provideService(ElectronDialog.ElectronDialog, {

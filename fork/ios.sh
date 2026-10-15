@@ -71,7 +71,13 @@ cmd_check() {
   PATH=$PWD/node_modules/.bin:$PATH
   vp run --filter @t3tools/mobile --filter @t3tools/client-runtime --filter @t3tools/desktop \
     --filter @t3tools/web typecheck
-  vp test run "${TOUCHED[@]}"
+  # Each package's own config sets up its DOM and browser test projects; the root one runs only node.
+  local pkg path paths
+  for pkg in apps/mobile apps/desktop apps/web packages/client-runtime; do
+    paths=()
+    for path in "${TOUCHED[@]}"; do [[ $path == "$pkg"/* ]] && paths+=("${path#"$pkg"/}"); done
+    [ ${#paths[@]} -eq 0 ] || (cd "$pkg" && vp test run "${paths[@]}")
+  done
   vp lint "${TOUCHED[@]}"
 }
 
