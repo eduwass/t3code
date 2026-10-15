@@ -223,6 +223,14 @@ export const make = Effect.gen(function* () {
       if (event.triggeredByAccelerator === true) return;
       runMenuEffect("paste-as-text", dispatchMenuAction("paste-as-text"));
     };
+    const newWindowClick = () => {
+      runMenuEffect(
+        "new-window",
+        Effect.gen(function* () {
+          yield* (yield* DesktopWindow.DesktopWindow).createAdditional;
+        }),
+      );
+    };
     const zoomClick = (direction: DesktopWindow.MainWindowZoomDirection) => () => {
       runMenuEffect(`zoom-${direction}`, zoomMainWindow(direction));
     };
@@ -265,6 +273,13 @@ export const make = Effect.gen(function* () {
       {
         label: m(msg("File", { $context: "menu bar title" })),
         submenu: [
+          // Cmd+N, Cmd+Shift+N and Cmd+Alt+N already start new chats.
+          {
+            label: "New Window",
+            accelerator: environment.platform === "darwin" ? "Cmd+Ctrl+N" : "Ctrl+Alt+Shift+N",
+            click: newWindowClick,
+          },
+          { type: "separator" },
           ...(environment.platform === "darwin"
             ? []
             : [
