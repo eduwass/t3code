@@ -5,6 +5,7 @@
 #   fork/ios.sh [rebuild] [base]   rebase the stack, check, push, build, sign, install
 #   fork/ios.sh status             is the installed build behind the server? (exit 0/1/2)
 #   fork/ios.sh check              install deps, then typecheck, test and lint what the stack touches
+#   fork/ios.sh tag                the nightly tag of the running server
 #   fork/ios.sh install NUMBER [DEVICE]  (run by rebuild, on the Mac) sign app.zip beside this script and install it
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -28,6 +29,17 @@ TOUCHED=(
   apps/mobile/src/native
   apps/mobile/src/persistence
   packages/client-runtime/src/voice-input
+  apps/desktop/src/app
+  apps/desktop/src/window
+  apps/desktop/src/ipc/methods
+  apps/web/src/components/sidebar
+  apps/web/src/components/onboarding
+  apps/web/src/uiStateStore.ts
+  apps/web/src/windowProjectScope.ts
+  apps/web/src/windowProjectScope.test.ts
+  apps/web/src/windowView
+  apps/web/src/components/CommandPalette.logic.test.ts
+  apps/web/src/state/server.ts
 )
 
 die() {
@@ -35,9 +47,16 @@ die() {
   exit 1
 }
 
-# The nightly tag of the server the phone connects to, e.g. v0.0.46-nightly.20261013.3042.
+# The nightly tag of the server the apps connect to, e.g. v0.0.46-nightly.20261013.3042. Read off
+# the running server's binary path: `t3 --version` reports a downloaded update the server may
+# not have restarted onto yet, and an app built for that version asks to update the server.
 server_tag() {
-  t3 --version | awk '{ print $2 }'
+  local port=${T3FORK_SERVER_PORT:-3773} pid tag
+  pid=$(ss -H -ltnp "sport = :$port" | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1)
+  [ -n "$pid" ] || die "no T3 server is listening on port $port"
+  tag=$(tr '\0' '\n' </proc/"$pid"/cmdline | sed -n 's|.*/versions/\([^/]*\)/t3$|v\1|p' | head -1)
+  [ -n "$tag" ] || die "cannot read the version of the server on port $port (pid $pid)"
+  echo "$tag"
 }
 
 protocol() {
@@ -47,9 +66,11 @@ protocol() {
 
 cmd_check() {
   pnpm install --frozen-lockfile --filter '@t3tools/mobile...' \
-    --filter '@t3tools/client-runtime...' --filter ./oxlint-plugin-t3code --filter . >/dev/null
+    --filter '@t3tools/client-runtime...' --filter '@t3tools/desktop...' \
+    --filter '@t3tools/web...' --filter '@t3tools/scripts...' --filter ./oxlint-plugin-t3code --filter . >/dev/null
   PATH=$PWD/node_modules/.bin:$PATH
-  vp run --filter @t3tools/mobile --filter @t3tools/client-runtime typecheck
+  vp run --filter @t3tools/mobile --filter @t3tools/client-runtime --filter @t3tools/desktop \
+    --filter @t3tools/web typecheck
   vp test run "${TOUCHED[@]}"
   vp lint "${TOUCHED[@]}"
 }
@@ -183,5 +204,6 @@ rebuild | status | check)
   cd ..
   "cmd_$command" "${2:-}"
   ;;
-*) die "usage: fork/ios.sh [rebuild [base] | status | check]" ;;
+tag) server_tag ;;
+*) die "usage: fork/ios.sh [rebuild [base] | status | check | tag]" ;;
 esac
