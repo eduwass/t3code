@@ -116,6 +116,14 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { resolveProjectExpanded, useUiStateStore } from "../uiStateStore";
+import { useWindowViewProjectKeys } from "../windowView/useWindowViewProjectKeys";
+import {
+  WindowViewMenuFooter,
+  WindowViewMenuHeader,
+  WindowViewProjectCheckbox,
+  WindowViewThreadCount,
+  useWindowViewMenuRequests,
+} from "../windowView/WindowViewMenu";
 import {
   getThreadKeysToDeselectAfterDelete,
   useThreadSelectionStore,
@@ -1014,6 +1022,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     { open: false, query: "" },
   );
   const projectScopeFilter = useComboboxFilter();
+  useWindowViewMenuRequests((open) => dispatchProjectScopeMenu({ type: "open-changed", open }));
   const allProjectSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
   const allProjectConfigsReady = useAtomValue(environmentProjects.projectConfigsReadyAtom);
   // Safari may click after Ctrl+click opens settings; suppress that selection until the picker reopens.
@@ -1181,7 +1190,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   });
   const scopedProjectGroups = revealWidensScope ? [] : chosenProjectGroups;
   const scopedProjectRefs = scopedProjectGroups.flatMap((project) => project.memberProjectRefs);
-  const scopedProjectKeys = revealWidensScope ? null : chosenScopeProjectKeys;
+  // This window's view, when it has one, replaces the sidebar's own project scope.
+  const scopedProjectKeys = useWindowViewProjectKeys(
+    projectGroups,
+    revealWidensScope ? null : chosenScopeProjectKeys,
+    threads,
+  );
   const threadSearch = useThreadSearch(
     connectedEnvironmentIds,
     threadSearchQuery,
@@ -3112,6 +3126,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         })
                       }
                     />
+                    <WindowViewMenuHeader />
                     <ComboboxEmpty>No matching projects.</ComboboxEmpty>
                     <ComboboxList aria-multiselectable>
                       {(item: (typeof projectScopeItems)[number]) => {
@@ -3131,6 +3146,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               if (project) handleProjectSettings(event, project);
                             }}
                           >
+                            {project ? (
+                              <WindowViewProjectCheckbox name={project.displayName} />
+                            ) : null}
                             <ProjectScopeRowIcon isSelected={isSelected}>
                               {project ? (
                                 <ProjectFavicon project={project} className="size-4 shrink-0" />
@@ -3147,36 +3165,39 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               />
                             ) : null}
                             {project ? (
-                              <ProjectRowActions
-                                pin={
-                                  canPinProject(project) ? (
-                                    <ProjectPinButton
-                                      name={project.displayName}
-                                      pinned={project.pinned}
-                                      shortcutLabel={shortcutLabelForCommand(
-                                        keybindings,
-                                        "thread.pin",
-                                      )}
-                                      onToggle={() => toggleProjectGroupPin(project)}
-                                    />
-                                  ) : null
-                                }
-                                settings={
-                                  <Button
-                                    size="icon-xs"
-                                    variant="ghost-muted"
-                                    tabIndex={-1}
-                                    aria-hidden="true"
-                                    title={`Project settings for ${project.displayName}`}
-                                    onPointerDown={(event) => event.stopPropagation()}
-                                    onClick={(event) => {
-                                      void handleProjectSettings(event, project);
-                                    }}
-                                  >
-                                    <SettingsIcon className="size-3.5" />
-                                  </Button>
-                                }
-                              />
+                              <span className="ml-auto flex shrink-0 items-center">
+                                <WindowViewThreadCount projectKey={project.projectKey} />
+                                <ProjectRowActions
+                                  pin={
+                                    canPinProject(project) ? (
+                                      <ProjectPinButton
+                                        name={project.displayName}
+                                        pinned={project.pinned}
+                                        shortcutLabel={shortcutLabelForCommand(
+                                          keybindings,
+                                          "thread.pin",
+                                        )}
+                                        onToggle={() => toggleProjectGroupPin(project)}
+                                      />
+                                    ) : null
+                                  }
+                                  settings={
+                                    <Button
+                                      size="icon-xs"
+                                      variant="ghost-muted"
+                                      tabIndex={-1}
+                                      aria-hidden="true"
+                                      title={`Project settings for ${project.displayName}`}
+                                      onPointerDown={(event) => event.stopPropagation()}
+                                      onClick={(event) => {
+                                        void handleProjectSettings(event, project);
+                                      }}
+                                    >
+                                      <SettingsIcon className="size-3.5" />
+                                    </Button>
+                                  }
+                                />
+                              </span>
                             ) : (
                               // Keeps "All projects" as tall as the project rows.
                               <span className="ml-auto size-7 shrink-0 sm:size-6" />
@@ -3185,6 +3206,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         );
                       }}
                     </ComboboxList>
+                    <WindowViewMenuFooter />
                   </ComboboxPopup>
                 </Combobox>
               }
