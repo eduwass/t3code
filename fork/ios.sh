@@ -30,6 +30,8 @@ TOUCHED=(
   apps/mobile/src/persistence
   packages/client-runtime/src/voice-input
   apps/desktop/src/app
+  apps/desktop/src/updates/DesktopUpdates.ts
+  apps/desktop/src/updates/ForkStagedBuild.ts
   apps/desktop/src/window
   apps/desktop/src/ipc/methods
   apps/web/src/components/sidebar
@@ -56,6 +58,13 @@ server_tag() {
   [ -n "$pid" ] || die "no T3 server is listening on port $port"
   tag=$(tr '\0' '\n' </proc/"$pid"/cmdline | sed -n 's|.*/versions/\([^/]*\)/t3$|v\1|p' | head -1)
   [ -n "$tag" ] || die "cannot read the version of the server on port $port (pid $pid)"
+  # A fork server build carries a made-up version: keep the base the stack is on.
+  if ! git rev-parse -q --verify "$tag^{commit}" >/dev/null; then
+    local current
+    current=$(git config fork-stack.upstream) || die "server runs $tag, not an upstream release"
+    echo "fork: server runs $tag, not an upstream release; staying on $current" >&2
+    tag=$current
+  fi
   echo "$tag"
 }
 
