@@ -13,6 +13,7 @@ import {
   type HistoryDirection,
 } from "../../navigationHistory";
 import { primaryServerKeybindingsAtom } from "../../state/server";
+import { APP_BASE_NAME } from "../../branding";
 import { cn } from "../../lib/utils";
 import { useIssuesSupported, usePullRequestsSupported } from "../../state/environments";
 import { T3Wordmark } from "../T3Wordmark";
@@ -193,8 +194,7 @@ function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
           onBackdrop ? "text-white/70" : "text-muted-foreground",
         )}
       >
-        {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product wordmark */}
-        {"Code"}
+        {APP_BASE_NAME.replace(/^T3 /, "")}
       </span>
     </span>
   );
