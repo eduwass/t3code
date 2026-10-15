@@ -34,6 +34,13 @@ import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
+import {
+  cascadeWindowBounds,
+  firstAdditionalWindow,
+  forgetAdditionalWindow,
+  isAdditionalWindow,
+  trackAdditionalWindow,
+} from "./AdditionalWindows.ts";
 
 const TITLEBAR_HEIGHT = 40;
 // Matches --workspace-topbar-height in apps/web/src/index.css. Native macOS
@@ -102,6 +109,9 @@ export class DesktopWindow extends Context.Service<
   DesktopWindow,
   {
     readonly createMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
+    // Another window beside the main one (File > New Window). It does not save
+    // its bounds or host the preview browser; it becomes main when main closes.
+    readonly createAdditional: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly ensureMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly revealOrCreateMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly activate: Effect.Effect<void, DesktopWindowError>;
@@ -374,10 +384,9 @@ export const make = Effect.gen(function* () {
   const currentMainWindow = electronWindow.currentMainOrFirst.pipe(Effect.flatMap(withoutSplash));
   const focusedMainWindow = electronWindow.focusedMainOrFirst.pipe(Effect.flatMap(withoutSplash));
 
-  const createWindow = Effect.fn("desktop.window.createWindow")(function* (): Effect.fn.Return<
-    Electron.BrowserWindow,
-    DesktopWindowError
-  > {
+  const createWindow = Effect.fn("desktop.window.createWindow")(function* (
+    kind: "main" | "additional" = "main",
+  ): Effect.fn.Return<Electron.BrowserWindow, DesktopWindowError> {
     yield* previewManager.getBrowserSession();
     const applicationUrl = getDesktopUrl(environment.isDevelopment);
     const iconPaths = yield* assets.iconPaths;
@@ -407,7 +416,12 @@ export const make = Effect.gen(function* () {
       yield* logWindowWarning("saved main window bounds could not be restored; using defaults");
     }
     const window = yield* electronWindow.create({
-      ...initialBounds,
+      ...(kind === "main"
+        ? initialBounds
+        : (cascadeWindowBounds(
+            Electron.BrowserWindow.getFocusedWindow()?.getNormalBounds() ?? null,
+            displayBounds,
+          ) ?? DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE)),
       minWidth: 840,
       minHeight: 620,
       show: false,
@@ -525,9 +539,10 @@ export const make = Effect.gen(function* () {
         fiber === undefined ? Effect.void : Fiber.join(fiber).pipe(Effect.asVoid),
       ),
     );
-    flushMainWindowBounds = flushBoundsPersist;
-
-    yield* previewManager.setMainWindow(window);
+    if (kind === "main") {
+      flushMainWindowBounds = flushBoundsPersist;
+      yield* previewManager.setMainWindow(window);
+    }
     window.webContents.on("will-attach-webview", (event, webPreferences, params) => {
       if (
         typeof params.partition !== "string" ||
@@ -699,13 +714,15 @@ export const make = Effect.gen(function* () {
       event.preventDefault();
       window.setTitle(environment.displayName);
     });
-    window.on("resize", scheduleBoundsPersist);
-    window.on("move", scheduleBoundsPersist);
-    window.on("maximize", scheduleBoundsPersist);
-    window.on("unmaximize", scheduleBoundsPersist);
-    window.on("close", () => {
-      runFork(flushBoundsPersist);
-    });
+    if (kind === "main") {
+      window.on("resize", scheduleBoundsPersist);
+      window.on("move", scheduleBoundsPersist);
+      window.on("maximize", scheduleBoundsPersist);
+      window.on("unmaximize", scheduleBoundsPersist);
+      window.on("close", () => {
+        runFork(flushBoundsPersist);
+      });
+    }
 
     if (environment.platform === "darwin") {
       window.on("enter-full-screen", () => {
@@ -851,7 +868,7 @@ export const make = Effect.gen(function* () {
       }
       // Reveal the real window, then close the connecting splash (if any) so the
       // two don't overlap and there's no blank gap between them.
-      if (persistedSettings.mainWindowMaximized) {
+      if (kind === "main" && persistedSettings.mainWindowMaximized) {
         window.maximize();
       }
       void runPromise(Effect.andThen(electronWindow.reveal(window), dismissConnectingSplash));
@@ -865,11 +882,29 @@ export const make = Effect.gen(function* () {
     window.on("closed", () => {
       clearDevelopmentLoadRetry();
       clearBoundsPersist();
-      void runPromise(electronWindow.clearMain(Option.some(window)));
+      void runPromise(
+        electronWindow.clearMain(Option.some(window)).pipe(Effect.andThen(promoteAdditionalWindow)),
+      );
     });
 
     return window;
   });
+
+  // Main owns the preview browser host and the menu's renderer events, so when
+  // it closes an additional window takes over. ponytail: the promoted window
+  // keeps not saving its bounds; only a window created as main does.
+  const promoteAdditionalWindow = Effect.gen(function* () {
+    if (Option.isSome(yield* electronWindow.main)) return;
+    const next = firstAdditionalWindow();
+    if (next === undefined) return;
+    forgetAdditionalWindow(next);
+    yield* electronWindow.setMain(next);
+    yield* previewManager.setMainWindow(next);
+  }).pipe(
+    Effect.catch((error) =>
+      logWindowWarning("failed to promote an additional window", { message: error.message }),
+    ),
+  );
 
   const createMain = Effect.gen(function* () {
     const window = yield* createWindow();
@@ -877,6 +912,14 @@ export const make = Effect.gen(function* () {
     yield* logWindowInfo("main window created");
     return window;
   }).pipe(Effect.withSpan("desktop.window.createMain"));
+
+  const createAdditional = Effect.gen(function* () {
+    if (Option.isNone(yield* currentMainWindow)) return yield* createMain;
+    const window = yield* createWindow("additional");
+    trackAdditionalWindow(window);
+    yield* logWindowInfo("additional window created");
+    return window;
+  }).pipe(Effect.withSpan("desktop.window.createAdditional"));
 
   const ensureMain = Effect.gen(function* () {
     const existingWindow = yield* currentMainWindow;
@@ -979,6 +1022,7 @@ export const make = Effect.gen(function* () {
 
   return DesktopWindow.of({
     createMain,
+    createAdditional,
     ensureMain,
     revealOrCreateMain,
     prepareCaptureReveal: Effect.gen(function* () {
@@ -1054,8 +1098,13 @@ export const make = Effect.gen(function* () {
     runMainContentsCommand: Effect.fn("desktop.window.runMainContentsCommand")(function* (command) {
       yield* Effect.annotateCurrentSpan({ command });
       // The registered main window, never the focused one: with an OAuth popup
-      // focused, Reload would otherwise reload the popup mid sign-in.
-      const window = yield* electronWindow.main;
+      // focused, Reload would otherwise reload the popup mid sign-in. A focused
+      // additional window is an app window too, so it is the target.
+      const focused = yield* electronWindow.focusedMainOrFirst;
+      const window =
+        Option.isSome(focused) && isAdditionalWindow(focused.value)
+          ? focused
+          : yield* electronWindow.main;
       if (Option.isNone(window) || window.value.isDestroyed()) return;
       const webContents = window.value.webContents;
       if (command === "reload") webContents.reload();
