@@ -51,6 +51,13 @@ import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts"
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
 import { installMainWindowRemoteRequestHeaderPolicy } from "./RemoteRequestHeaders.ts";
+import {
+  cascadeWindowBounds,
+  firstAdditionalWindow,
+  forgetAdditionalWindow,
+  isAdditionalWindow,
+  trackAdditionalWindow,
+} from "./AdditionalWindows.ts";
 
 const TITLEBAR_HEIGHT = 40;
 
@@ -132,6 +139,9 @@ export class DesktopWindow extends Context.Service<
   DesktopWindow,
   {
     readonly createMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
+    // Another window beside the main one (File > New Window). It does not save
+    // its bounds or host the preview browser; it becomes main when main closes.
+    readonly createAdditional: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly ensureMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly revealOrCreateMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly activate: Effect.Effect<void, DesktopWindowError>;
@@ -422,6 +432,17 @@ export const make = Effect.gen(function* () {
   );
   let flushMainWindowBounds: Effect.Effect<void> = Effect.void;
   let remoteRequestHeaderOwner: Electron.BrowserWindow | null = null;
+  let detachRemoteRequestHeaders: () => void = () => {};
+  const installRemoteRequestHeaders = (window: Electron.BrowserWindow) =>
+    installMainWindowRemoteRequestHeaderPolicy(window.webContents.session, {
+      desktopOrigin: getDesktopOrigin(environment.isDevelopment),
+      mainWebContentsId: window.webContents.id,
+      clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
+      devServerOrigin: Option.getOrUndefined(
+        Option.map(environment.devServerUrl, (url) => url.origin),
+      ),
+      isDevelopment: environment.isDevelopment,
+    });
 
   const dismissConnectingSplash = Effect.gen(function* () {
     const splash = yield* Ref.getAndSet(splashWindowRef, Option.none());
@@ -455,10 +476,9 @@ export const make = Effect.gen(function* () {
     yield* previewManager.reapplyZoom();
   });
 
-  const createWindow = Effect.fn("desktop.window.createWindow")(function* (): Effect.fn.Return<
-    Option.Option<Electron.BrowserWindow>,
-    DesktopWindowError
-  > {
+  const createWindow = Effect.fn("desktop.window.createWindow")(function* (
+    kind: "main" | "additional" = "main",
+  ): Effect.fn.Return<Option.Option<Electron.BrowserWindow>, DesktopWindowError> {
     if (yield* Ref.get(desktopState.quitting)) return Option.none();
     yield* previewManager.getBrowserSession();
     const applicationUrl = getDesktopUrl(environment.isDevelopment);
@@ -490,7 +510,12 @@ export const make = Effect.gen(function* () {
     }
     if (yield* Ref.get(desktopState.quitting)) return Option.none();
     const window = yield* electronWindow.create({
-      ...initialBounds,
+      ...(kind === "main"
+        ? initialBounds
+        : (cascadeWindowBounds(
+            Electron.BrowserWindow.getFocusedWindow()?.getNormalBounds() ?? null,
+            displayBounds,
+          ) ?? DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE)),
       minWidth: DesktopAppSettings.MIN_MAIN_WINDOW_SIZE.width,
       minHeight: DesktopAppSettings.MIN_MAIN_WINDOW_SIZE.height,
       show: false,
@@ -626,9 +651,10 @@ export const make = Effect.gen(function* () {
         fiber === undefined ? Effect.void : Fiber.join(fiber).pipe(Effect.asVoid),
       ),
     );
-    flushMainWindowBounds = flushBoundsPersist;
-
-    yield* previewManager.setMainWindow(window);
+    if (kind === "main") {
+      flushMainWindowBounds = flushBoundsPersist;
+      yield* previewManager.setMainWindow(window);
+    }
     if (yield* Ref.get(desktopState.quitting)) {
       yield* electronWindow.destroyAll;
       return Option.none();
@@ -879,13 +905,15 @@ export const make = Effect.gen(function* () {
       event.preventDefault();
       window.setTitle(environment.displayName);
     });
-    window.on("resize", scheduleBoundsPersist);
-    window.on("move", scheduleBoundsPersist);
-    window.on("maximize", scheduleBoundsPersist);
-    window.on("unmaximize", scheduleBoundsPersist);
-    window.on("close", () => {
-      runFork(flushBoundsPersist);
-    });
+    if (kind === "main") {
+      window.on("resize", scheduleBoundsPersist);
+      window.on("move", scheduleBoundsPersist);
+      window.on("maximize", scheduleBoundsPersist);
+      window.on("unmaximize", scheduleBoundsPersist);
+      window.on("close", () => {
+        runFork(flushBoundsPersist);
+      });
+    }
 
     if (environment.platform === "darwin") {
       // Mouse drivers can deliver Back/Forward as macOS swipe gestures instead of buttons.
@@ -1050,7 +1078,7 @@ export const make = Effect.gen(function* () {
       firstRevealComplete = true;
       pendingMainReveals.delete(window);
       window.webContents.setBackgroundThrottling(true);
-      if (persistedSettings.mainWindowMaximized) window.maximize();
+      if (kind === "main" && persistedSettings.mainWindowMaximized) window.maximize();
       yield* electronWindow.reveal(window);
       yield* dismissConnectingSplash;
     });
@@ -1060,21 +1088,12 @@ export const make = Effect.gen(function* () {
       void runPromise(revealWhenReady);
     });
 
-    // Desktop IPC only answers the main window, so register it before its renderer can call in.
-    yield* electronWindow.setMain(window);
-    remoteRequestHeaderOwner = window;
-    const detachRemoteRequestHeaders = installMainWindowRemoteRequestHeaderPolicy(
-      window.webContents.session,
-      {
-        desktopOrigin: getDesktopOrigin(environment.isDevelopment),
-        mainWebContentsId: window.webContents.id,
-        clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
-        devServerOrigin: Option.getOrUndefined(
-          Option.map(environment.devServerUrl, (url) => url.origin),
-        ),
-        isDevelopment: environment.isDevelopment,
-      },
-    );
+    // Desktop IPC only answers the main window; an additional window is tracked by its caller.
+    if (kind === "main") {
+      yield* electronWindow.setMain(window);
+      remoteRequestHeaderOwner = window;
+      detachRemoteRequestHeaders = installRemoteRequestHeaders(window);
+    }
     loadApplication();
     if (environment.isDevelopment) {
       window.webContents.openDevTools({ mode: "detach" });
@@ -1088,11 +1107,31 @@ export const make = Effect.gen(function* () {
         remoteRequestHeaderOwner = null;
         detachRemoteRequestHeaders();
       }
-      void runPromise(electronWindow.clearMain(Option.some(window)));
+      void runPromise(
+        electronWindow.clearMain(Option.some(window)).pipe(Effect.andThen(promoteAdditionalWindow)),
+      );
     });
 
     return Option.some(window);
   });
+
+  // Main owns the preview browser host and the menu's renderer events, so when
+  // it closes an additional window takes over. ponytail: the promoted window
+  // keeps not saving its bounds; only a window created as main does.
+  const promoteAdditionalWindow = Effect.gen(function* () {
+    if (Option.isSome(yield* electronWindow.main)) return;
+    const next = firstAdditionalWindow();
+    if (next === undefined) return;
+    forgetAdditionalWindow(next);
+    yield* electronWindow.setMain(next);
+    remoteRequestHeaderOwner = next;
+    detachRemoteRequestHeaders = installRemoteRequestHeaders(next);
+    yield* previewManager.setMainWindow(next);
+  }).pipe(
+    Effect.catch((error) =>
+      logWindowWarning("failed to promote an additional window", { message: error.message }),
+    ),
+  );
 
   const createMain = Effect.gen(function* () {
     const window = yield* createWindow();
@@ -1102,6 +1141,16 @@ export const make = Effect.gen(function* () {
     }
     return window;
   }).pipe(Effect.withSpan("desktop.window.createMain"));
+
+  const createAdditional = Effect.gen(function* () {
+    if (Option.isNone(yield* currentMainWindow)) return yield* createMain;
+    const window = yield* createWindow("additional");
+    if (Option.isSome(window)) {
+      trackAdditionalWindow(window.value);
+      yield* logWindowInfo("additional window created");
+    }
+    return window;
+  }).pipe(Effect.withSpan("desktop.window.createAdditional"));
 
   const ensureMain = Effect.gen(function* () {
     if (yield* Ref.get(desktopState.quitting)) return Option.none<Electron.BrowserWindow>();
@@ -1233,6 +1282,7 @@ export const make = Effect.gen(function* () {
 
   return DesktopWindow.of({
     createMain: createMain.pipe(Effect.flatMap(requireWindow)),
+    createAdditional: createAdditional.pipe(Effect.flatMap(requireWindow)),
     ensureMain: ensureMain.pipe(Effect.flatMap(requireWindow)),
     revealOrCreateMain,
     prepareCaptureReveal: Effect.gen(function* () {
@@ -1299,8 +1349,13 @@ export const make = Effect.gen(function* () {
     }),
     runMainContentsCommand: Effect.fn("desktop.window.runMainContentsCommand")(function* (command) {
       yield* Effect.annotateCurrentSpan({ command });
-      // A focused OAuth popup must not receive the app's Reload command.
-      const window = yield* electronWindow.main;
+      // A focused OAuth popup must not receive the app's Reload command. A focused
+      // additional window is an app window too, so it is the target.
+      const focused = yield* electronWindow.focusedMainOrFirst;
+      const window =
+        Option.isSome(focused) && isAdditionalWindow(focused.value)
+          ? focused
+          : yield* electronWindow.main;
       if (Option.isNone(window) || window.value.isDestroyed()) return;
       const webContents = window.value.webContents;
       if (command === "reload") webContents.reload();
