@@ -94,7 +94,7 @@ const layerDesktopUpdates = ({ checkResult }: MenuServices) =>
 const layerDesktopWindow = (selectedAction: Deferred.Deferred<string>) =>
   Layer.succeed(DesktopWindow.DesktopWindow, {
     createMain: Effect.die("unexpected createMain"),
-    createAdditional: Effect.die("unexpected createAdditional"),
+    createAdditional: () => Effect.die("unexpected createAdditional"),
     ensureMain: Effect.die("unexpected ensureMain"),
     revealOrCreateMain: Effect.die("unexpected revealOrCreateMain"),
     activate: Effect.void,
