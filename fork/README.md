@@ -35,7 +35,7 @@ case where the app refuses to connect until it is rebuilt.
 
 ## Which upstream commit
 
-The base is the nightly tag the devbox server runs (`t3 --version`), so the app
+The base is the nightly tag the running devbox server is on (`fork/ios.sh tag`), so the app
 and the server share one set of contracts. The app refuses a server whose
 `ORCHESTRATION_PROTOCOL_VERSION` differs; within one protocol version, upstream's App Store
 build runs against older and newer servers alike. Pass another ref to override:
@@ -64,3 +64,30 @@ would swap the fork's JavaScript for upstream's.
 Cloud transcription is set on the phone in Settings, Voice input, Cloud service.
 For Groq: `https://api.groq.com/openai/v1/audio/transcriptions`, model
 `whisper-large-v3-turbo`, and the API key, which stays in the phone's Keychain.
+
+## Rebuild the Mac app
+
+```sh
+fork/mac.sh            # from the devbox, on the stack branch
+```
+
+T3 Space is the desktop app with the fork's patches, installed on the MacBook
+Max beside the official T3 Code as `/Applications/T3 Space (Nightly).app`. It has its own app
+ID (`com.eduwass.t3space`), profile and T3 home (`~/.t3space`), and registers
+`t3space://` rather than `t3code://`, so it cannot touch the official app's
+state or take its sign-in links. Turn off its local environment in Settings
+and pair it with the devbox server, the same way as the official app.
+
+`fork/mac.sh install` installs the newest finished build again, for when the Mac
+was asleep during a rebuild. `fork/mac.sh status` says whether the installed
+build is behind the server, and `fork/mac.sh rollback` puts the previous build
+back.
+
+The script rebases the stack onto the nightly the devbox server runs, runs the
+checks, pushes `stack`, then pushes the same commit to `mac/<version>`. That
+push starts `.github/workflows/fork-mac.yml`, which packages an unsigned arm64
+app on a GitHub-hosted Mac. The script downloads it, deletes the branch and hands it to
+`fork/mac-install.sh` on the Mac, which signs it ad hoc and replaces the app in
+`/Applications`. It never quits T3 Space: while the app is open the new build
+waits and goes in when it quits, so your windows stay put.
+The build has no update feed, so it never updates itself into the official app.
