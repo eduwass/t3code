@@ -98,6 +98,7 @@ import {
   whenNodeRemoveLabel,
 } from "./KeybindingsSettings.logic";
 import { SettingsGroup } from "./SettingsGroup";
+import { WindowKeybindingsSection } from "../../windowView/WindowKeybindingsSection";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { keybindingSearchAnchorId, useSearchableSetting } from "./settingsSearch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -1721,6 +1722,7 @@ export function KeybindingsSettingsPanel() {
         </div>
       </SettingsSection>
 
+      <WindowKeybindingsSection query={query} />
       {!canWriteSettings ? (
         <p className="text-xs text-muted-foreground">
           {connectedEnvironments.length === 0

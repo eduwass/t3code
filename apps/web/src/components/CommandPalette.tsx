@@ -293,6 +293,8 @@ import {
   pickableProjectGroups,
 } from "@t3tools/client-runtime/state/project-grouping";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
+import { useWindowViewGroups } from "../windowView/useWindowViewProjectKeys";
+import { useWindowViewPaletteGroups } from "../windowView/useWindowViewPaletteGroups";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 import { readIssueListPreferences } from "~/components/issue/issueListPreferences";
@@ -625,8 +627,10 @@ function OpenCommandPaletteDialog(props: {
     defaultProjectRef,
     handleNewThread,
   });
+  // "New thread in…" offers only the projects this window's view shows.
+  const windowProjectGroups = useWindowViewGroups(projectGroups);
   const projectPickerEntries = buildSidebarProjectPickerEntries({
-    groups: pickableProjectGroups(projectGroups),
+    groups: pickableProjectGroups(windowProjectGroups),
     preferredProjectRef: contextualProjectRef,
   });
   const pickerProjects = projectPickerEntries.map(({ group, targetProject }) => ({
@@ -1381,6 +1385,7 @@ function OpenCommandPaletteDialog(props: {
     if (firstOption) startNewProject(firstOption.environmentId, null);
   };
 
+  const windowViewGroups = useWindowViewPaletteGroups();
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
   if (projects.length > 0) {
@@ -1905,7 +1910,11 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  const rootGroups = buildRootGroups({ actionItems, recentThreadItems }, messages);
+  const rootGroups = [
+    ...buildRootGroups({ actionItems, recentThreadItems }, messages),
+    // Only while searching, so the empty palette reads as before.
+    ...(deferredQuery.trim() === "" ? [] : windowViewGroups),
+  ];
   const sourceSelectionViewValue =
     addProjectEnvironmentId === null ? null : `sources:${addProjectEnvironmentId}`;
   const activeGroups =

@@ -101,6 +101,7 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
         } as DesktopAppIdentity.DesktopAppIdentity["Service"]),
         Effect.provideService(ElectronApp.ElectronApp, {
           setPath: () => Effect.void,
+          on: () => Effect.void,
           whenReady: stub.record("ready"),
         } as unknown as ElectronApp.ElectronApp["Service"]),
         Effect.provideService(ElectronDialog.ElectronDialog, {
