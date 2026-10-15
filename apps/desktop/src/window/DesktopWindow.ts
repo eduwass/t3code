@@ -39,6 +39,8 @@ import {
   firstAdditionalWindow,
   forgetAdditionalWindow,
   isAdditionalWindow,
+  setInitialWindowView,
+  takePendingMainWindowView,
   trackAdditionalWindow,
 } from "./AdditionalWindows.ts";
 
@@ -111,7 +113,10 @@ export class DesktopWindow extends Context.Service<
     readonly createMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     // Another window beside the main one (File > New Window). It does not save
     // its bounds or host the preview browser; it becomes main when main closes.
-    readonly createAdditional: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
+    // `view` is a window view for its renderer to apply, such as "only=goldflower".
+    readonly createAdditional: (
+      view?: string,
+    ) => Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly ensureMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly revealOrCreateMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly activate: Effect.Effect<void, DesktopWindowError>;
@@ -908,18 +913,23 @@ export const make = Effect.gen(function* () {
 
   const createMain = Effect.gen(function* () {
     const window = yield* createWindow();
+    const pendingView = takePendingMainWindowView();
+    if (pendingView !== null) setInitialWindowView(window, pendingView);
     yield* electronWindow.setMain(window);
     yield* logWindowInfo("main window created");
     return window;
   }).pipe(Effect.withSpan("desktop.window.createMain"));
 
-  const createAdditional = Effect.gen(function* () {
-    if (Option.isNone(yield* currentMainWindow)) return yield* createMain;
-    const window = yield* createWindow("additional");
+  const createAdditional = Effect.fn("desktop.window.createAdditional")(function* (view?: string) {
+    const hasMain = Option.isSome(yield* currentMainWindow);
+    // Set before the renderer can ask: it loads asynchronously after creation.
+    const window = hasMain ? yield* createWindow("additional") : yield* createMain;
+    if (view !== undefined) setInitialWindowView(window, view);
+    if (!hasMain) return window;
     trackAdditionalWindow(window);
     yield* logWindowInfo("additional window created");
     return window;
-  }).pipe(Effect.withSpan("desktop.window.createAdditional"));
+  });
 
   const ensureMain = Effect.gen(function* () {
     const existingWindow = yield* currentMainWindow;

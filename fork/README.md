@@ -91,3 +91,25 @@ app on a GitHub-hosted Mac. The script downloads it, deletes the branch and hand
 `/Applications`. It never quits T3 Space: while the app is open the new build
 waits and goes in when it quits, so your windows stay put.
 The build has no update feed, so it never updates itself into the official app.
+
+## Window views
+
+Each T3 Space window shows its own set of projects. The sidebar's project
+filter menu picks only some, or all except some (tick the checkboxes), and saves
+the pick as a named view; the dot next to the wordmark shows the view's color
+and name, and opens that menu. File > New Window (Cmd+Ctrl+N) opens a window with the focused window's
+view, Cmd+Ctrl+1…9 open the saved views in order, the command palette has
+"New window" sections when you search, and right-clicking T3 Space in the Dock
+lists the saved views. The window shortcuts are set in Settings > Keybindings >
+Windows; they are kept on this Mac, since the server has no window commands.
+
+Links open a window with a view, so automations can too:
+
+```sh
+open "t3space://window?view=Work"                      # a saved view, by name
+open "t3space://window?only=goldflower"                 # projects by sidebar name
+open "t3space://window?except=eventintel,goldflower"
+```
+
+A new window opens on the current macOS Space, so a script that switches to a
+Space and then opens its link fills that Space with the right window.

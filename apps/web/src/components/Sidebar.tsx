@@ -137,6 +137,14 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
+import { useWindowViewProjectKeys } from "../windowView/useWindowViewProjectKeys";
+import {
+  WindowViewMenuFooter,
+  WindowViewMenuHeader,
+  WindowViewProjectCheckbox,
+  WindowViewThreadCount,
+  useWindowViewMenuRequests,
+} from "../windowView/WindowViewMenu";
 import {
   getThreadKeysToDeselectAfterDelete,
   useThreadSelectionStore,
@@ -2684,6 +2692,7 @@ export default function Sidebar() {
     { open: false, query: "" },
   );
   const projectScopeFilter = useComboboxFilter();
+  useWindowViewMenuRequests((open) => dispatchProjectScopeMenu({ type: "open-changed", open }));
   // Filtering derives from the same React state that controls the input, so
   // the visible query and the visible list can never desync — the peer wiring
   // in DiffPanel and BranchToolbarBranchSelector. "All projects" is the default
@@ -2707,7 +2716,7 @@ export default function Sidebar() {
         : (projectGroups.find((project) => project.projectKey === projectScopeKey) ?? null),
     [projectGroups, projectScopeKey],
   );
-  const scopedProjectKeys = useMemo(
+  const singleProjectScopeKeys = useMemo(
     () =>
       scopedProjectGroup === null
         ? null
@@ -2717,6 +2726,11 @@ export default function Sidebar() {
             ),
           ),
     [scopedProjectGroup],
+  );
+  const scopedProjectKeys = useWindowViewProjectKeys(
+    projectGroups,
+    singleProjectScopeKeys,
+    threads,
   );
   // Configs identify scratch projects, so both they and live project snapshots
   // must arrive before a persisted scope can be considered missing.
@@ -5144,6 +5158,7 @@ export default function Sidebar() {
                         })
                       }
                     />
+                    <WindowViewMenuHeader />
                     <ComboboxEmpty>No matching projects.</ComboboxEmpty>
                     <ComboboxList>
                       {(item: (typeof projectScopeItems)[number]) => {
@@ -5158,6 +5173,9 @@ export default function Sidebar() {
                             }}
                           >
                             {project ? (
+                              <WindowViewProjectCheckbox name={project.displayName} />
+                            ) : null}
+                            {project ? (
                               <ProjectFavicon project={project} className="size-4 shrink-0" />
                             ) : (
                               <FolderIcon className="size-4 shrink-0" />
@@ -5169,6 +5187,9 @@ export default function Sidebar() {
                                 primaryEnvironmentId={primaryEnvironmentId}
                                 machineByEnvironmentId={environmentMachineById}
                               />
+                            ) : null}
+                            {project ? (
+                              <WindowViewThreadCount projectKey={project.projectKey} />
                             ) : null}
                             {project ? (
                               <Button
@@ -5190,6 +5211,7 @@ export default function Sidebar() {
                         );
                       }}
                     </ComboboxList>
+                    <WindowViewMenuFooter />
                   </ComboboxPopup>
                 </Combobox>
               }

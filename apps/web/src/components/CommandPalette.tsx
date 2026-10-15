@@ -243,6 +243,8 @@ import {
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
 import type { Project } from "../types";
+import { useWindowViewGroups } from "../windowView/useWindowViewProjectKeys";
+import { useWindowViewPaletteGroups } from "../windowView/useWindowViewPaletteGroups";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 
@@ -883,13 +885,15 @@ function OpenCommandPaletteDialog(props: {
       }),
     [activeDraftThread, activeThread, defaultProjectRef, handleNewThread],
   );
+  // "New thread in…" offers only the projects this window's view shows.
+  const windowProjectGroups = useWindowViewGroups(projectGroups);
   const projectPickerEntries = useMemo(
     () =>
       buildSidebarProjectPickerEntries({
-        groups: projectGroups,
+        groups: windowProjectGroups,
         preferredProjectRef: contextualProjectRef,
       }),
-    [contextualProjectRef, projectGroups],
+    [contextualProjectRef, windowProjectGroups],
   );
   const pickerProjects = useMemo(
     () =>
@@ -1803,6 +1807,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }, [clearOpenIntent, browseNavigation, openIntent, projectThreadItems, pushPaletteView]);
 
+  const windowViewGroups = useWindowViewPaletteGroups();
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
   if (projects.length > 0) {
@@ -2282,7 +2287,11 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
+  const rootGroups = [
+    ...buildRootGroups({ actionItems, recentThreadItems }),
+    // Only while searching, so the empty palette reads as before.
+    ...(deferredQuery.trim() === "" ? [] : windowViewGroups),
+  ];
   const settingsSearchItems: CommandPaletteActionItem[] = searchSettings(
     deferredQuery,
     availableSettingsSearchItems,
