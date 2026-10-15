@@ -1055,6 +1055,10 @@ export interface DesktopBridge {
   setLocalEnvironmentEnabled: (enabled: boolean) => Promise<void>;
   getLocalEnvironmentBearerToken: () => Promise<string>;
   getClientSettings: () => Promise<ClientSettings | null>;
+  /** T3 Space: the saved views the macOS Dock menu opens, each as a link query. */
+  setDockWindowViews?: (
+    views: ReadonlyArray<{ readonly name: string; readonly view: string }>,
+  ) => Promise<void>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
   getConnectionCatalog: () => Promise<string | null>;
   setConnectionCatalog: (catalog: string) => Promise<boolean>;
@@ -1119,6 +1123,10 @@ export interface DesktopBridge {
   checkSystemPermission: (pane: SystemSettingsPane) => Promise<boolean>;
   probeRemoteEditors: () => Promise<readonly EditorId[]>;
   pasteAsText: () => Promise<void>;
+  /** T3 Space: open another window, optionally with a window view such as "only=goldflower". */
+  openNewWindow?: (view?: string) => Promise<void>;
+  /** T3 Space: the view this window was opened with, once; null afterwards. */
+  takeInitialWindowView?: () => Promise<string | null>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   onSnapShotEvent: (listener: (event: DesktopSnapShotEvent) => void) => () => void;
   onQuitShortcut: (listener: (event: QuitShortcutHintEvent) => void) => () => void;
