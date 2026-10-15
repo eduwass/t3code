@@ -2,6 +2,7 @@ import { Debouncer } from "@tanstack/react-pacer";
 import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import { create } from "zustand";
 import { normalizeProjectPathForComparison } from "@t3tools/client-runtime/state/projects";
+import { rememberWindowProjectScope, withWindowProjectScope } from "./windowProjectScope";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
 const THREAD_CHANGED_FILES_EXPANSION_VERSION = 2;
@@ -238,6 +239,7 @@ export function persistState(state: UiState): void {
         pullRequestMergeMethod: state.pullRequestMergeMethod,
       } satisfies PersistedUiState),
     );
+    rememberWindowProjectScope(state.sidebarProjectScopeKeys);
     if (!legacyKeysCleanedUp) {
       legacyKeysCleanedUp = true;
       for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
@@ -444,7 +446,7 @@ interface UiStateStore extends UiState {
 }
 
 export const useUiStateStore = create<UiStateStore>((set) => ({
-  ...readPersistedState(),
+  ...withWindowProjectScope(readPersistedState()),
   markThreadVisited: (threadId, visitedAt) =>
     set((state) => markThreadVisited(state, threadId, visitedAt)),
   markThreadUnread: (threadId, latestTurnCompletedAt) =>
