@@ -30,6 +30,8 @@ TOUCHED=(
   apps/mobile/src/persistence
   packages/client-runtime/src/voice-input
   apps/desktop/src/app
+  apps/desktop/src/updates/DesktopUpdates.ts
+  apps/desktop/src/updates/ForkStagedBuild.ts
   apps/desktop/src/window
   apps/desktop/src/ipc/methods
   apps/web/src/components/sidebar
