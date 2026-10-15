@@ -98,6 +98,7 @@ import { WizardPanel, WizardSteps, WizardPopup, WizardHeader } from "../ui/wizar
 import { Dialog } from "../ui/dialog";
 import { toastManager } from "../ui/toast";
 import { cn } from "../../lib/utils";
+import { APP_BASE_NAME } from "../../branding";
 import { formatRelativeTime } from "../../timestampFormat";
 
 type WizardStep = "connection" | "agents" | "import";
@@ -233,10 +234,10 @@ export function WelcomeWizard({
         <WizardHeader
           title="Set up T3 Code"
           identity={
-            <div className="flex items-baseline gap-1.5" role="img" aria-label="T3 Code">
+            <div className="flex items-baseline gap-1.5" role="img" aria-label={APP_BASE_NAME}>
               <T3Wordmark className="h-4 w-auto shrink-0" aria-hidden />
               <span className="text-2xl font-medium tracking-tight text-muted-foreground">
-                Code
+                {APP_BASE_NAME.replace(/^T3 /, "")}
               </span>
             </div>
           }
