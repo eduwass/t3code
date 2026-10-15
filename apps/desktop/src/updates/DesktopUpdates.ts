@@ -40,6 +40,11 @@ import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
 import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import {
+  restartIntoStagedForkBuild,
+  stagedForkBuildNotes,
+  stagedForkBuildVersion,
+} from "./ForkStagedBuild.ts";
+import {
   createInitialDesktopUpdateState,
   reduceDesktopUpdateStateOnCheckFailure,
   reduceDesktopUpdateStateOnCheckStart,
@@ -876,6 +881,18 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }
+    if (
+      !(yield* Ref.get(updaterConfiguredRef)) &&
+      stagedForkBuildVersion(environment.appVersion) !== null
+    ) {
+      yield* Effect.sync(restartIntoStagedForkBuild);
+      return {
+        accepted: true,
+        completed: false,
+        failed: false,
+        state: yield* Ref.get(updateStateRef),
+      };
+    }
     const result = yield* installDownloadedUpdate(expectedVersion);
     return {
       accepted: result.accepted,
@@ -1153,6 +1170,35 @@ export const make = Effect.gen(function* () {
         ),
       );
       if (Option.isSome(disabledReason)) {
+        // T3 Space: a build fork/mac.sh staged shows as a downloaded update.
+        yield* Effect.sync(() => {
+          const version = stagedForkBuildVersion(environment.appVersion);
+          return version === null ? null : { version, items: stagedForkBuildNotes() };
+        }).pipe(
+          Effect.flatMap((staged) =>
+            staged === null
+              ? Effect.void
+              : updateState((state) =>
+                  // Rebuilds on one nightly share a version, so the notes tell them apart too.
+                  state.downloadedVersion === staged.version &&
+                  state.releaseNotes[0]?.items.join("\n") === staged.items.join("\n")
+                    ? state
+                    : {
+                        ...state,
+                        status: "downloaded",
+                        availableVersion: staged.version,
+                        downloadedVersion: staged.version,
+                        releaseNotes:
+                          staged.items.length > 0
+                            ? [{ ...staged, totalItems: staged.items.length }]
+                            : [],
+                      },
+                ),
+          ),
+          Effect.andThen(Effect.sleep("1 minute")),
+          Effect.forever,
+          Effect.forkScoped,
+        );
         return;
       }
       yield* Ref.set(updaterConfiguredRef, true);
