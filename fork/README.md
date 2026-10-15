@@ -89,7 +89,8 @@ push starts `.github/workflows/fork-mac.yml`, which packages an unsigned arm64
 app on a GitHub-hosted Mac. The script downloads it, deletes the branch and hands it to
 `fork/mac-install.sh` on the Mac, which signs it ad hoc and replaces the app in
 `/Applications`. It never quits T3 Space: while the app is open the new build
-waits and goes in when it quits, so your windows stay put.
+waits and goes in when it quits, so your windows stay put. Meanwhile the sidebar's
+update pill shows the waiting build; clicking it restarts T3 Space into it.
 The build has no update feed, so it never updates itself into the official app.
 
 ## Window views

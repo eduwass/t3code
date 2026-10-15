@@ -34,6 +34,7 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
+import { restartIntoStagedForkBuild, stagedForkBuildVersion } from "./ForkStagedBuild.ts";
 import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
 import {
   createInitialDesktopUpdateState,
@@ -756,6 +757,18 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }
+    if (
+      !(yield* Ref.get(updaterConfiguredRef)) &&
+      stagedForkBuildVersion(environment.appVersion) !== null
+    ) {
+      yield* Effect.sync(restartIntoStagedForkBuild);
+      return {
+        accepted: true,
+        completed: false,
+        failed: false,
+        state: yield* Ref.get(updateStateRef),
+      };
+    }
     const result = yield* installDownloadedUpdate(expectedVersion);
     return {
       accepted: result.accepted,
@@ -996,6 +1009,26 @@ export const make = Effect.gen(function* () {
       const enabled = yield* shouldEnableAutoUpdates;
       yield* setState(createBaseUpdateState(settings.updateChannel, enabled, environment));
       if (!enabled) {
+        // T3 Space: a build fork/mac.sh staged shows as a downloaded update.
+        yield* Effect.sync(() => stagedForkBuildVersion(environment.appVersion)).pipe(
+          Effect.flatMap((version) =>
+            version === null
+              ? Effect.void
+              : updateState((state) =>
+                  state.downloadedVersion === version
+                    ? state
+                    : {
+                        ...state,
+                        status: "downloaded",
+                        availableVersion: version,
+                        downloadedVersion: version,
+                      },
+                ),
+          ),
+          Effect.andThen(Effect.sleep("1 minute")),
+          Effect.forever,
+          Effect.forkScoped,
+        );
         return;
       }
       yield* Ref.set(updaterConfiguredRef, true);
