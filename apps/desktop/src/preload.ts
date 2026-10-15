@@ -208,6 +208,11 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.invoke(IpcChannels.OPEN_SYSTEM_SETTINGS_CHANNEL, pane),
   probeRemoteEditors: () => ipcRenderer.invoke(IpcChannels.PROBE_REMOTE_EDITORS_CHANNEL, undefined),
   pasteAsText: () => ipcRenderer.invoke(IpcChannels.PASTE_AS_TEXT_CHANNEL, undefined),
+  openNewWindow: (view) => ipcRenderer.invoke(IpcChannels.OPEN_NEW_WINDOW_CHANNEL, view),
+  takeInitialWindowView: () =>
+    ipcRenderer.invoke(IpcChannels.TAKE_INITIAL_WINDOW_VIEW_CHANNEL, undefined),
+  setDockWindowViews: (views) =>
+    ipcRenderer.invoke(IpcChannels.SET_DOCK_WINDOW_VIEWS_CHANNEL, views),
   onMenuAction: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, action: unknown) => {
       if (typeof action !== "string") return;

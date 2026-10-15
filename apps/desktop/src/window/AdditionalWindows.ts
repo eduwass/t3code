@@ -24,6 +24,36 @@ export const isAdditionalWindow = (window: Electron.BrowserWindow): boolean =>
 export const firstAdditionalWindow = (): Electron.BrowserWindow | undefined =>
   [...additionalWindows.values()].find((window) => !window.isDestroyed());
 
+// The window view a window was opened with ("only=goldflower", "view=Work"), kept
+// until its renderer asks for it once on boot. The renderer owns what a view means.
+const initialViews = new Map<number, string>();
+
+export function setInitialWindowView(window: Electron.BrowserWindow, view: string): void {
+  const id = window.webContents.id;
+  initialViews.set(id, view);
+  window.once("closed", () => initialViews.delete(id));
+}
+
+// A window link that arrives before any window exists (it launched the app)
+// goes to the first window instead of opening a second one beside it.
+let pendingMainView: string | null = null;
+
+export function setPendingMainWindowView(view: string): void {
+  pendingMainView = view;
+}
+
+export function takePendingMainWindowView(): string | null {
+  const view = pendingMainView;
+  pendingMainView = null;
+  return view;
+}
+
+export function takeInitialWindowView(senderId: number): string | null {
+  const view = initialViews.get(senderId) ?? null;
+  initialViews.delete(senderId);
+  return view;
+}
+
 /** The additional window whose own renderer sent an IPC request, if it is one. */
 export function additionalWindowForSender(senderId: number): Electron.BrowserWindow | undefined {
   const window = additionalWindows.get(senderId);

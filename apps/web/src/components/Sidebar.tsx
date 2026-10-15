@@ -90,6 +90,14 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { useUiStateStore } from "../uiStateStore";
+import { useWindowViewProjectKeys } from "../windowView/useWindowViewProjectKeys";
+import {
+  WindowViewMenuFooter,
+  WindowViewMenuHeader,
+  WindowViewProjectCheckbox,
+  WindowViewThreadCount,
+  useWindowViewMenuRequests,
+} from "../windowView/WindowViewMenu";
 import {
   getThreadKeysToDeselectAfterDelete,
   useThreadSelectionStore,
@@ -858,6 +866,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     { open: false, query: "" },
   );
   const projectScopeFilter = useComboboxFilter();
+  useWindowViewMenuRequests((open) => dispatchProjectScopeMenu({ type: "open-changed", open }));
   const allProjectSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
   const allProjectConfigsReady = useAtomValue(environmentProjects.projectConfigsReadyAtom);
   const headerSearchRef = useRef<HTMLDivElement | null>(null);
@@ -943,7 +952,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     projectScopeKey === null
       ? null
       : (projectGroups.find((project) => project.projectKey === projectScopeKey) ?? null);
-  const scopedProjectKeys =
+  const singleProjectScopeKeys =
     scopedProjectGroup === null
       ? null
       : new Set(
@@ -951,6 +960,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
           ),
         );
+  const scopedProjectKeys = useWindowViewProjectKeys(
+    projectGroups,
+    singleProjectScopeKeys,
+    useQuietThreadShells(),
+  );
   useEffect(() => {
     const nextKey = resolveSidebarProjectScopeKey({
       groups: projectGroups,
@@ -2712,6 +2726,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         })
                       }
                     />
+                    <WindowViewMenuHeader />
                     <ComboboxEmpty>No matching projects.</ComboboxEmpty>
                     <ComboboxList>
                       {(item: (typeof projectScopeItems)[number]) => {
@@ -2726,6 +2741,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             }}
                           >
                             {project ? (
+                              <WindowViewProjectCheckbox name={project.displayName} />
+                            ) : null}
+                            {project ? (
                               <ProjectFavicon project={project} className="size-4 shrink-0" />
                             ) : (
                               <FolderIcon className="size-4 shrink-0" />
@@ -2737,6 +2755,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 primaryEnvironmentId={primaryEnvironmentId}
                                 machineByEnvironmentId={environmentMachineById}
                               />
+                            ) : null}
+                            {project ? (
+                              <WindowViewThreadCount projectKey={project.projectKey} />
                             ) : null}
                             {project ? (
                               <Button
@@ -2758,6 +2779,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         );
                       }}
                     </ComboboxList>
+                    <WindowViewMenuFooter />
                   </ComboboxPopup>
                 </Combobox>
               }

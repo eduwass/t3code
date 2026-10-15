@@ -229,6 +229,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
+import { useWindowViewGroups } from "../windowView/useWindowViewProjectKeys";
+import { useWindowViewPaletteGroups } from "../windowView/useWindowViewPaletteGroups";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
@@ -606,8 +608,10 @@ function OpenCommandPaletteDialog(props: {
     defaultProjectRef,
     handleNewThread,
   });
+  // "New thread in…" offers only the projects this window's view shows.
+  const windowProjectGroups = useWindowViewGroups(projectGroups);
   const projectPickerEntries = buildSidebarProjectPickerEntries({
-    groups: projectGroups,
+    groups: windowProjectGroups,
     preferredProjectRef: contextualProjectRef,
   });
   const pickerProjects = projectPickerEntries.map(({ group, targetProject }) => ({
@@ -1183,6 +1187,7 @@ function OpenCommandPaletteDialog(props: {
     if (firstOption) startNewProject(firstOption.environmentId, null);
   };
 
+  const windowViewGroups = useWindowViewPaletteGroups();
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
   if (projects.length > 0) {
@@ -1588,7 +1593,11 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
+  const rootGroups = [
+    ...buildRootGroups({ actionItems, recentThreadItems }),
+    // Only while searching, so the empty palette reads as before.
+    ...(deferredQuery.trim() === "" ? [] : windowViewGroups),
+  ];
   const settingsSearchItems: CommandPaletteActionItem[] = searchSettings(
     deferredQuery,
     availableSettingsSearchItems,
