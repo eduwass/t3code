@@ -8,10 +8,17 @@ vi.mock("electron", () => ({}));
 
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopIpc from "./DesktopIpc.ts";
+import { trackAdditionalWindow } from "../window/AdditionalWindows.ts";
 
-it.effect("answers only the main window's top frame", () =>
+it.effect("answers only the top frame of the main window and of additional app windows", () =>
   Effect.gen(function* () {
     const mainFrame = {};
+    const additionalFrame = {};
+    trackAdditionalWindow({
+      webContents: { id: 3, mainFrame: additionalFrame },
+      once: () => undefined,
+      isDestroyed: () => false,
+    } as unknown as Electron.BrowserWindow);
     const invoke = new Map<string, DesktopIpc.DesktopIpcHandleListener>();
     const sync = new Map<string, DesktopIpc.DesktopIpcSyncListener>();
     const ipc = yield* DesktopIpc.DesktopIpc.pipe(
@@ -46,6 +53,8 @@ it.effect("answers only the main window's top frame", () =>
       app: { sender: { id: 1 }, senderFrame: mainFrame },
       appSubframe: { sender: { id: 1 }, senderFrame: {} },
       previewGuest: { sender: { id: 2 }, senderFrame: {} },
+      additionalApp: { sender: { id: 3 }, senderFrame: additionalFrame },
+      additionalSubframe: { sender: { id: 3 }, senderFrame: {} },
     };
     const results: Record<string, unknown> = {};
     for (const [name, sender] of Object.entries(senders)) {
@@ -62,6 +71,8 @@ it.effect("answers only the main window's top frame", () =>
       app: ["secret", "secret"],
       appSubframe: ["rejected", undefined],
       previewGuest: ["rejected", undefined],
+      additionalApp: ["secret", "secret"],
+      additionalSubframe: ["rejected", undefined],
     });
   }),
 );
