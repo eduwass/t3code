@@ -21,6 +21,7 @@ import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
 import * as DesktopSnapShot from "../../snapShot/DesktopSnapShot.ts";
 import { m } from "../../i18n/messages.ts";
+import { additionalWindowForSender } from "../../window/AdditionalWindows.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 
@@ -36,6 +37,8 @@ class SnapShotIpcUnauthorizedSenderError extends Schema.TaggedError<SnapShotIpcU
 const ensureTrustedSnapShotSender = Effect.fn("desktop.ipc.snapShot.ensureTrustedSender")(
   function* (event: DesktopIpc.DesktopIpcInvokeEvent | undefined) {
     const main = yield* (yield* ElectronWindow.ElectronWindow).main;
+    const additional = event && additionalWindowForSender(event.sender.id);
+    if (additional !== undefined) return additional;
     if (
       event === undefined ||
       Option.isNone(main) ||

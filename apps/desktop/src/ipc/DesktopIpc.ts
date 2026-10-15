@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import { additionalWindowForSender } from "../window/AdditionalWindows.ts";
 
 export interface DesktopIpcInvokeEvent {
   readonly sender: { readonly id: number };
@@ -185,13 +186,14 @@ export const layer = (ipcMain: DesktopIpcMain) =>
     Effect.gen(function* () {
       const electronWindow = yield* ElectronWindow.ElectronWindow;
       return make(ipcMain, (event) =>
-        Effect.map(
-          electronWindow.main,
-          (main) =>
-            Option.isSome(main) &&
-            main.value.webContents.id === event.sender.id &&
-            main.value.webContents.mainFrame === event.senderFrame,
-        ),
+        Effect.map(electronWindow.main, (main) => {
+          // T3 Space: windows opened with File > New Window are the app's own too.
+          const window =
+            Option.isSome(main) && main.value.webContents.id === event.sender.id
+              ? main.value
+              : additionalWindowForSender(event.sender.id);
+          return window !== undefined && window.webContents.mainFrame === event.senderFrame;
+        }),
       );
     }),
   );
