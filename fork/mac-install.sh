@@ -32,15 +32,20 @@ install)
   fi
   ;;
 swap-when-quit)
-  while running; do sleep 30; done
+  while running; do sleep 5; done
   rm -f "$dir/waiter.pid"
   exec bash "$self" "$name" "$dir" swap
   ;;
 swap)
-  [ -d "$dir/new/$name.app" ]
+  # T3 Space starts a waiter of its own for its update button, so two can race.
+  mkdir "$dir/lock" 2>/dev/null || exit 0
+  trap 'rmdir "$dir/lock"' EXIT
+  [ -d "$dir/new/$name.app" ] || exit 0
   rm -rf "$dir/previous.app"
   [ ! -d "$app" ] || mv "$app" "$dir/previous.app"
   mv "$dir/new/$name.app" "$app" && rm -rf "$dir/new"
+  # Set by the app's update button: reopen into the new build.
+  if [ -f "$dir/relaunch" ]; then rm "$dir/relaunch"; open "$app"; fi
   ;;
 version)
   if [ -d "$dir/new/$name.app" ]; then version "$dir/new/$name.app"; else version "$app"; fi
