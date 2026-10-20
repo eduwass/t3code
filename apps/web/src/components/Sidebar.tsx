@@ -2592,8 +2592,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       if (jumpIndex === null) return;
       navigateToThreadKey(orderedThreadKeys[jumpIndex] ?? null);
     };
-    window.addEventListener("keydown", onWindowKeyDown);
-    return () => window.removeEventListener("keydown", onWindowKeyDown);
+    // Capture phase: the composer editor claims modified arrows (⌘⇧↓ selects to
+    // the end) before a bubbling listener would see them.
+    window.addEventListener("keydown", onWindowKeyDown, true);
+    return () => window.removeEventListener("keydown", onWindowKeyDown, true);
   }, [
     keybindings,
     navigateToThread,
