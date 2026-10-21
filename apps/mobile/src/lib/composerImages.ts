@@ -360,6 +360,8 @@ export async function pickComposerImages(input: { readonly existingCount: number
 export async function pickComposerMedia(input: {
   readonly existingCount: number;
   readonly maxVideoBytes?: number;
+  /** Take a new photo or video with the camera instead of choosing from the library. */
+  readonly camera?: boolean;
 }): Promise<{
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly error: string | null;
@@ -387,7 +389,19 @@ export async function pickComposerMedia(input: {
   const endHandoff = beginForegroundHandoff();
   let result: Awaited<ReturnType<typeof imagePicker.launchImageLibraryAsync>>;
   try {
-    result = await imagePicker.launchImageLibraryAsync({
+    if (input.camera) {
+      const permission = await imagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        return {
+          attachments: [],
+          error: "Allow camera access for T3 Code in the Settings app to take photos.",
+        };
+      }
+    }
+    const launch = input.camera
+      ? imagePicker.launchCameraAsync
+      : imagePicker.launchImageLibraryAsync;
+    result = await launch({
       mediaTypes: input.maxVideoBytes === undefined ? ["images"] : ["images", "videos"],
       allowsMultipleSelection: true,
       selectionLimit: remainingSlots,
@@ -401,7 +415,12 @@ export async function pickComposerMedia(input: {
   } catch (error) {
     return {
       attachments: [],
-      error: error instanceof Error ? error.message : "Could not open the photo library.",
+      error:
+        error instanceof Error
+          ? error.message
+          : input.camera
+            ? "Could not open the camera."
+            : "Could not open the photo library.",
     };
   } finally {
     endHandoff();
