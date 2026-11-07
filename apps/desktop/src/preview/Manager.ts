@@ -1597,6 +1597,30 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           shiftKey: input.shift,
           altKey: input.alt,
         });
+      // ponytail: fork-only Cmd+Left/Right pane moves, hardcoded like the renderer's listener.
+      // Up and Down stay with the page, where they scroll to its top and bottom.
+      const paneMove =
+        hostPlatform === "darwin" &&
+        input.type === "keyDown" &&
+        input.meta &&
+        !input.control &&
+        !input.alt &&
+        !input.shift &&
+        (input.key === "ArrowLeft" || input.key === "ArrowRight") &&
+        host &&
+        !host.isDestroyed() &&
+        holdsKeyboardFocus(wc);
+      if (paneMove && host) {
+        event.preventDefault();
+        if (!input.isAutoRepeat) {
+          host.focus();
+          host.send(
+            MENU_ACTION_CHANNEL,
+            input.key === "ArrowLeft" ? "workspace.focusLeft" : "workspace.focusRight",
+          );
+        }
+        return;
+      }
       if (forwarded && host) {
         // The page keeps these keys. Only the main-frame preload can report one it
         // left unhandled, so a focused iframe (e.g. Google Docs' input) keeps its own find or zoom.
