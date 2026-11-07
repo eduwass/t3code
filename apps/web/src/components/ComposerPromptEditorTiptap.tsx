@@ -1058,6 +1058,8 @@ function ComposerPromptEditorTiptapInner(
           if (
             isMacPlatform(navigator.platform) &&
             boundary &&
+            // An empty document has no boundary to reach; mod+Up/Down scroll the timeline instead.
+            !(boundary === "documentboundary" && view.state.doc.textContent.length === 0) &&
             !event.altKey &&
             !event.ctrlKey &&
             !event.isComposing
