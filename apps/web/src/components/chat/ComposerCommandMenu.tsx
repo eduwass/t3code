@@ -1,4 +1,6 @@
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
+import { PaperFrameMenuThumb } from "../paper/composerPaperFrames";
+import type { PaperFrameMenuItem } from "../paper/paperFrameReferences";
 import type { ComposerPathSearchTarget } from "@t3tools/client-runtime/state/threads";
 import {
   resolveProviderSkillSourceKind,
@@ -88,7 +90,8 @@ export type ComposerCommandItem =
       machine: EnvironmentMachineKind;
       label: string;
       description: string;
-    };
+    }
+  | PaperFrameMenuItem;
 
 export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   listId: string;
@@ -220,6 +223,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           aria-hidden="true"
           className="size-4 shrink-0 text-secondary-label"
         />
+      ) : null}
+      {props.item.type === "paper-frame" ? (
+        <PaperFrameMenuThumb item={props.item} active={props.isActive} />
       ) : null}
       {pullRequestPresentation ? (
         <pullRequestPresentation.Icon

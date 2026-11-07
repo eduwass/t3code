@@ -1,4 +1,5 @@
 import { documentChipKindForFileName } from "~/pierre-icons";
+import { PAPER_FRAME_CONTEXT_KIND, PaperFrameContextChip } from "../paper/composerPaperFrames";
 import { isSvgAttachment } from "@t3tools/shared/image";
 import { useRenderedAppearance } from "../../hooks/useTheme";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
@@ -517,6 +518,11 @@ export function UserMessageContextReferenceChip(props: {
   onExpandVideo: (file: ChatFileAttachment) => void;
   onOpenFile: (file: ChatFileAttachment) => void;
 }) {
+  if (props.reference.kind === PAPER_FRAME_CONTEXT_KIND) {
+    return (
+      <PaperFrameContextChip contextId={props.reference.contextId} label={props.reference.label} />
+    );
+  }
   const { resolvedTheme, activeThreadEnvironmentId } = use(TimelineRowCtx);
   const copyMarkdown = formatComposerContextReference({
     kind: props.reference.kind,

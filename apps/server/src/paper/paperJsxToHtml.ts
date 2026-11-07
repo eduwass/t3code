@@ -296,7 +296,7 @@ export function paperJsxRootSize(jsx: string): { width: number | null; height: n
 const SIZE_REPORTER = `<script>addEventListener("load",()=>document.fonts.ready.then(()=>{const r=document.body.firstElementChild?.getBoundingClientRect();if(r)parent.postMessage({type:"${PAPER_FRAME_SIZE_MESSAGE}",width:Math.ceil(r.width),height:Math.ceil(r.height)},"*")}))</script>`;
 
 /** Keeps only `--name: value;` declarations from Paper's `get_tokens` CSS, so nothing can leave the rule. */
-export function paperTokensCss(css: string): string {
+function paperTokensCss(css: string): string {
   const declarations = css.match(/--[\w-]+\s*:\s*[^;{}<>]+;/g) ?? [];
   return declarations.length === 0 ? "" : `:root{${declarations.join("")}}`;
 }
