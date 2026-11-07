@@ -1,6 +1,6 @@
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { PaperFrameMenuThumb } from "../paper/composerPaperFrames";
-import type { PaperFrameMenuItem } from "../paper/paperFrameReferences";
+import type { PaperFrameMenuItem } from "@t3tools/client-runtime/work-log/paper-frame-references";
 import type { ComposerPathSearchTarget } from "@t3tools/client-runtime/state/threads";
 import {
   resolveProviderSkillSourceKind,
