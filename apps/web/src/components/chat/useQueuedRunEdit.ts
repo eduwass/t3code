@@ -2,6 +2,7 @@ import { msg } from "gt-react";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
+import { paperFrameRecords } from "../paper/paperFrameReferences";
 import {
   makeQueuedRunEditStore,
   makeQueuedRunsAtom,
@@ -184,7 +185,7 @@ async function submitQueuedRunEdit(input: {
             version: 1,
             records: [
               ...new Map(
-                [...keptRecords, ...newRecords].map(
+                [...keptRecords, ...newRecords, ...paperFrameRecords(editText)].map(
                   (record) => [record.contextId, record] as const,
                 ),
               ).values(),
