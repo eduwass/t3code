@@ -763,7 +763,11 @@ export default function ChatView(props: ChatViewProps) {
     setPendingServerThreadStartFromOriginByThreadId,
   ] = useState<Record<string, boolean>>({});
   const legendListRef = useRef<LegendListRef | null>(null);
-  const conversationArea = workspaceAreaProps("conversation", 1, gt("Conversation"));
+  // ponytail: a side chat sits inside the right panel's area; its own areas would hide its
+  // composer from the panel's focus and show up as extra panes for Cmd+Arrow.
+  const conversationArea = embedded
+    ? undefined
+    : workspaceAreaProps("conversation", 1, gt("Conversation"));
   const [composerOverlayElement, setComposerOverlayElement] = useState<HTMLDivElement | null>(null);
   const [composerTimelineInset, setComposerTimelineInset] = useState(0);
   const composerTimelineInsetRef = useRef(0);
@@ -3637,11 +3641,9 @@ export default function ChatView(props: ChatViewProps) {
             </div>
 
             <div
-              {...workspaceAreaProps(
-                "composer",
-                2,
-                showProviderSubagentBar ? "Subagent" : undefined,
-              )}
+              {...(embedded
+                ? undefined
+                : workspaceAreaProps("composer", 2, showProviderSubagentBar ? "Subagent" : undefined))}
               ref={(overlay: HTMLDivElement | null) => {
                 setComposerOverlayElement(overlay);
                 attachFollowComposerOverlay(overlay);
