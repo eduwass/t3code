@@ -153,6 +153,7 @@ function Panel({
         layout: resolveChatCanvasLayout({ container, preview: null }),
         previewKey: null,
         registerTimeline: noop,
+        timeline: null,
         measureDetailsCard: noop,
         detailsCardTopInset: 0,
         preferredDetailsCard: placement,

@@ -66,6 +66,7 @@ function Card({
           layout: resolveChatCanvasLayout({ container, preview: null }),
           previewKey: null,
           registerTimeline: () => {},
+          timeline: null,
           measureDetailsCard: () => {},
           detailsCardTopInset: 0,
           preferredDetailsCard: placement,
