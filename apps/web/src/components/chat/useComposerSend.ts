@@ -1,5 +1,5 @@
 import { isClearComposerCommand, parseSideChatCommand } from "@t3tools/shared/composerTrigger";
-import { withPaperFrameRecords } from "../paper/paperFrameReferences";
+import { withPaperFrameRecords } from "@t3tools/client-runtime/work-log/paper-frame-references";
 import { armFreshSession, disarmFreshSession, readFreshSessionArm } from "./freshSessionArms";
 import {
   mergeDirectPreviewAnnotation,

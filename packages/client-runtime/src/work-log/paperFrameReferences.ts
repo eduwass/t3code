@@ -1,6 +1,6 @@
 // T3 Space fork: Paper frame references in composer text, and the context records
 // the agent receives for them. No React here, so send paths can import it cheaply.
-import { paperNodeUrl, type PaperShot } from "@t3tools/client-runtime/work-log/paper-tools";
+import { paperNodeUrl, type PaperShot } from "./paperTools.ts";
 import type {
   ComposerContextId,
   ComposerContextRecord,

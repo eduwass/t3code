@@ -1,4 +1,6 @@
 import { Button } from "../../components/ui/Button";
+import { PAPER_FRAME_CONTEXT_KIND } from "@t3tools/client-runtime/work-log/paper-frame-references";
+import { openPaperFrameReference } from "../paper/paperFrameViewerState";
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { useWorkspaceSettledContentWidth } from "../layout/workspace-content-width";
@@ -1720,7 +1722,7 @@ function renderFeedEntry(
   }
 
   if (entry.type === "run-fold") {
-    return (
+    const fold = (
       <View className="mb-1 flex-row items-center border-b border-border-subtle px-2">
         <RunFoldButton
           key={entry.id}
@@ -1738,6 +1740,15 @@ function renderFeedEntry(
           />
         ) : null}
       </View>
+    );
+    // T3 Space fork: Paper thumbnails stay visible while the run is folded.
+    return entry.paperShots?.length ? (
+      <>
+        {fold}
+        <PaperShotsStrip environmentId={props.environmentId} shots={entry.paperShots} />
+      </>
+    ) : (
+      fold
     );
   }
 
@@ -1810,11 +1821,7 @@ function renderFeedEntry(
     return entry.paperShots?.length ? (
       <>
         {toggle}
-        <PaperShotsStrip
-          environmentId={props.environmentId}
-          shots={entry.paperShots}
-          onPressPreview={props.onPressPreview}
-        />
+        <PaperShotsStrip environmentId={props.environmentId} shots={entry.paperShots} />
       </>
     ) : (
       toggle
@@ -2399,6 +2406,14 @@ function UserMessageContent(props: UserMessageContentProps) {
     const record = props.context?.records.find(
       (record) => record.contextId === reference.contextId,
     );
+    if (reference.kind === PAPER_FRAME_CONTEXT_KIND) {
+      openPaperFrameReference(
+        props.environmentId,
+        reference.contextId,
+        record?.label ?? "Paper frame",
+      );
+      return;
+    }
     if (record?.kind === "mention" && "path" in record) {
       props.linkHandlers.onLinkPress?.(record.path);
       return;
@@ -3688,7 +3703,7 @@ export const ThreadFeed = memo(function ThreadFeed({
     }
     switch (entry.type) {
       case "run-fold":
-        return resolveThreadFeedFixedItemSize(entry.type);
+        return entry.paperShots?.length ? undefined : resolveThreadFeedFixedItemSize(entry.type);
       case "work-toggle":
         return entry.thought ? undefined : WORK_GROUP_TOGGLE_HEIGHT;
       case "thinking":
