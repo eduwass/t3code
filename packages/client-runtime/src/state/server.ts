@@ -1304,6 +1304,12 @@ export function createServerEnvironmentAtoms<R, E>(
       staleTimeMs: 60_000,
       refreshIntervalMs: 5 * 60_000,
     }),
+    // T3 Space fork.
+    paper: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:paper:request",
+      tag: WS_METHODS.paperRequest,
+      staleTimeMs: 5 * 60_000,
+    }),
     processDiagnostics: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:process-diagnostics",
       tag: WS_METHODS.serverGetProcessDiagnostics,
