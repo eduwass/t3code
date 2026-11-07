@@ -20,14 +20,12 @@ import { resolveThreadRouteTarget } from "../../threadRoutes";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
 import { PreviewCard, PreviewCardPopup, PreviewCardTrigger } from "../ui/preview-card";
 import {
+  buildPaperFrameMenuItems,
   parseContextId,
-  type PaperFrameMention,
   type PaperFrameMenuItem,
 } from "@t3tools/client-runtime/work-log/paper-frame-references";
 
 export { PAPER_FRAME_CONTEXT_KIND } from "@t3tools/client-runtime/work-log/paper-frame-references";
-
-const MAX_MENU_ITEMS = 8;
 
 /** Frames from this thread's Paper work: drawn here first, then the rest of those files. */
 export function usePaperFrameMenuItems(input: {
@@ -68,53 +66,12 @@ export function usePaperFrameMenuItems(input: {
       : null,
   );
   if (!active) return [];
-
-  const names = new Map<string, string | null>();
-  const fileNames = new Map<string, string | null>();
-  const fileFrames: PaperFrameMention[] = [];
-  for (const result of [firstFile.data, secondFile.data]) {
-    if (result?._tag !== "listFrames") continue;
-    for (const frame of result.frames) {
-      names.set(`${frame.fileId}/${frame.nodeId}`, frame.name);
-      fileNames.set(frame.fileId, result.fileName);
-      fileFrames.push({
-        fileId: frame.fileId,
-        nodeId: frame.nodeId,
-        name: frame.name,
-        shot: null,
-        inThread: false,
-      });
-    }
-  }
-  if (shotNames.data?._tag === "frameNames") {
-    for (const frame of shotNames.data.frames) {
-      if (frame.name !== null) names.set(`${frame.fileId}/${frame.nodeId}`, frame.name);
-    }
-  }
-  const threadFrames: PaperFrameMention[] = shots.map((shot) => ({
-    fileId: shot.fileId,
-    nodeId: shot.nodeId,
-    name: names.get(shot.key) ?? null,
-    shot,
-    inThread: true,
-  }));
-  const inThread = new Set(shots.map((shot) => shot.key));
-  const query = (input.query ?? "").trim().toLowerCase();
-  return [
-    ...threadFrames,
-    ...fileFrames.filter((frame) => !inThread.has(`${frame.fileId}/${frame.nodeId}`)),
-  ]
-    .filter((frame) => query === "" || (frame.name ?? frame.nodeId).toLowerCase().includes(query))
-    .slice(0, MAX_MENU_ITEMS)
-    .map((frame) => ({
-      id: `paper-frame:${frame.fileId}/${frame.nodeId}`,
-      type: "paper-frame" as const,
-      frame,
-      label: frame.name ?? `Frame ${frame.nodeId}`,
-      description: frame.inThread
-        ? "Paper · drawn in this thread"
-        : `Paper · ${fileNames.get(frame.fileId) ?? "in the file"}`,
-    }));
+  return buildPaperFrameMenuItems({
+    shots,
+    files: [firstFile.data, secondFile.data],
+    shotNames: shotNames.data,
+    query: input.query ?? "",
+  });
 }
 
 /** The thread's screenshot when there is one, otherwise a small one fetched from Paper. */
