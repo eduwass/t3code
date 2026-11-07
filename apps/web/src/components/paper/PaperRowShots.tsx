@@ -8,9 +8,14 @@ import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
 import { ArrowUpRightIcon } from "lucide-react";
 import { use, useState } from "react";
 
+import type { EnvironmentId } from "@t3tools/contracts";
+
 import { useEnvironmentSettings } from "~/hooks/useSettings";
+import { serverEnvironment } from "~/state/server";
+import { useEnvironmentQuery } from "~/state/query";
 import { ChatMarkdownAssetImage } from "../chat/ChatMarkdownMedia";
 import { type TimelineRow, TimelineRowCtx } from "../chat/timelineRowContext";
+import { PaperFrameViewer, usePaperLiveFrame } from "./PaperFrameViewer";
 
 export function PaperRowShots({ row }: { row: TimelineRow }) {
   // An expanded group renders its header row and its content row; show the shots once.
@@ -32,28 +37,60 @@ function PaperShotsForEntries({
 
 function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefined }) {
   const ctx = use(TimelineRowCtx);
-  const enabled = useEnvironmentSettings(
-    ctx.activeThreadEnvironmentId,
-    (settings) => settings.paperIntegrationEnabled,
+  const environmentId = ctx.activeThreadEnvironmentId;
+  const { enabled, liveEnabled } = useEnvironmentSettings(environmentId, (settings) => ({
+    enabled: settings.paperIntegrationEnabled,
+    liveEnabled: settings.paperLiveFramesEnabled,
+  }));
+  const [viewing, setViewing] = useState<{ shot: PaperShot; live: boolean } | null>(null);
+  const visible = enabled && shots !== undefined && shots.length > 0;
+  // Names need the server to reach Paper; without it the strip still works, unnamed.
+  const names = useEnvironmentQuery(
+    visible
+      ? serverEnvironment.paper({
+          environmentId,
+          input: {
+            _tag: "frameNames",
+            frames: shots.slice(0, 64).map(({ fileId, nodeId }) => ({ fileId, nodeId })),
+          },
+        })
+      : null,
   );
-  if (!enabled || shots === undefined || shots.length === 0) return null;
+  if (!visible) return null;
+  const nameOf = (shot: PaperShot) =>
+    names.data?._tag === "frameNames"
+      ? (names.data.frames.find(
+          (frame) => frame.nodeId === shot.nodeId && frame.fileId === shot.fileId,
+        )?.name ?? null)
+      : null;
   return (
     <div className="mt-1.5 flex gap-2 overflow-x-auto rounded-lg bg-muted/40 p-2">
       {shots.map((shot) => (
-        <figure key={shot.key} className="flex shrink-0 flex-col gap-1">
+        <figure
+          key={shot.key}
+          className="flex shrink-0 flex-col gap-1"
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setViewing({ shot, live: true });
+          }}
+        >
+          {liveEnabled ? <PaperLivePrefetch environmentId={environmentId} shot={shot} /> : null}
           <ChatMarkdownAssetImage
-            environmentId={ctx.activeThreadEnvironmentId}
+            environmentId={environmentId}
             resource={shot.image}
-            alt={`Paper frame ${shot.nodeId}`}
+            alt={nameOf(shot) ?? `Paper frame ${shot.nodeId}`}
             style={SHOT_IMAGE_STYLE}
-            onImageExpand={ctx.onImageExpand}
+            onImageExpand={(preview) =>
+              liveEnabled ? setViewing({ shot, live: true }) : ctx.onImageExpand(preview)
+            }
           />
-          <figcaption>
+          <figcaption className="flex min-w-0 items-center justify-between gap-2 text-xs">
+            <span className="min-w-0 truncate text-foreground/80">{nameOf(shot)}</span>
             <a
               href={shot.url}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground"
+              className="inline-flex shrink-0 items-center gap-1 text-muted-foreground hover:text-foreground"
             >
               <PaperIcon />
               Open in Paper
@@ -62,8 +99,23 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
           </figcaption>
         </figure>
       ))}
+      {viewing !== null ? (
+        <PaperFrameViewer
+          environmentId={environmentId}
+          shot={viewing.shot}
+          name={nameOf(viewing.shot)}
+          live={viewing.live}
+          onClose={() => setViewing(null)}
+        />
+      ) : null}
     </div>
   );
+}
+
+/** Starts the live-frame request while the strip is on screen, so opening is instant. */
+function PaperLivePrefetch(props: { environmentId: EnvironmentId; shot: PaperShot }) {
+  usePaperLiveFrame(props.environmentId, props.shot, true);
+  return null;
 }
 
 // Height-led sizing; the asset's authored width would make each figure as wide as the full image.
