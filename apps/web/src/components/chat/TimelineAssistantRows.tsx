@@ -38,6 +38,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { vcsEnvironment } from "../../state/vcs";
 
 const NO_VCS_STATUS = Atom.make(AsyncResult.initial());
+import { useFileTreeLook } from "../../fileTreeLook/fileTreeLook";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -471,7 +472,8 @@ function AssistantChangedFilesSectionInner({
     (store) => store.threadChangedFilesExpandedById[routeThreadKey]?.[turnSummary.runId],
   );
   const setExpanded = useUiStateStore((store) => store.setThreadChangedFilesExpanded);
-  const allDirectoriesExpanded = persistedExpanded ?? false;
+  const fileTreeLook = useFileTreeLook();
+  const allDirectoriesExpanded = persistedExpanded ?? fileTreeLook.inlineExpanded;
 
   const thread = useQuietThreadShell(ctx.threadRef);
   const activeProject = useProject(
