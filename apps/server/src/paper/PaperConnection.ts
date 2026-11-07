@@ -31,7 +31,12 @@ const unreachable = (detail: string) =>
   new PaperUnavailableError({ reason: "unreachable", detail });
 
 export interface PaperToolResult {
-  readonly content: ReadonlyArray<{ readonly type: string; readonly text?: string }>;
+  readonly content: ReadonlyArray<{
+    readonly type: string;
+    readonly text?: string;
+    readonly data?: string;
+    readonly mimeType?: string;
+  }>;
   readonly isError: boolean;
 }
 
