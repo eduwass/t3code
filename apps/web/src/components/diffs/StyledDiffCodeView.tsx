@@ -9,7 +9,9 @@ import {
 /* oxlint-enable eslint/no-restricted-imports */
 import type { Ref } from "react";
 
-import { DIFF_SURFACE_THEME_UNSAFE_CSS } from "~/lib/diffRendering";
+import { useTheme } from "~/hooks/useTheme";
+import { DIFF_SURFACE_THEME_UNSAFE_CSS, resolveFileDiffPath } from "~/lib/diffRendering";
+import { PierreEntryIcon } from "../chat/PierreEntryIcon";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 
 export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
@@ -175,16 +177,40 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
   line-height: 1 !important;
 }
 
-[data-diffs-header] [data-change-icon],
 [data-diffs-header] [data-rename-icon] {
   display: block;
   flex-shrink: 0;
 }
 
+/* The file-type icon in the prefix slot stands in for the change icon, which shrinks to a dot
+   after the name; diffRendering colors it by change type. */
+[data-diffs-header] [data-change-icon] {
+  order: 1;
+  flex-shrink: 0;
+  width: 6px !important;
+  height: 6px !important;
+  margin-inline-start: 6px;
+  border-radius: 999px;
+  background-color: currentColor;
+}
+
+[data-diffs-header] [data-change-icon] > * {
+  display: none;
+}
+
+/* Keep the dot against the name, ahead of the copy-path button and file status. */
+slot[name="header-filename-suffix"]::slotted(*) {
+  order: 2;
+}
+
+[data-title],
+[data-prev-name] {
+  font-family: var(--font-mono) !important;
+}
+
 [data-title] {
   cursor: pointer;
   transition: color 120ms ease;
-  font-family: var(--font-sans) !important;
 }
 
 [data-title]:hover {
@@ -233,12 +259,26 @@ export function StyledDiffCodeView<LAnnotation = undefined>({
   viewerRef,
   className,
   unsafeCSSExtra,
+  renderHeaderPrefix,
   ...props
 }: StyledDiffCodeViewProps<LAnnotation>) {
+  const { resolvedTheme } = useTheme();
   return (
     <DiffWorkerPoolProvider>
       <CodeView<LAnnotation>
         {...props}
+        renderHeaderPrefix={(item) => (
+          // The slot wraps its content in a block, so lay the toggle and icon out in a row here.
+          <span className="flex items-center">
+            {renderHeaderPrefix?.(item)}
+            <PierreEntryIcon
+              pathValue={item.type === "diff" ? resolveFileDiffPath(item.fileDiff) : item.file.name}
+              kind="file"
+              theme={resolvedTheme}
+              className="mr-1.5"
+            />
+          </span>
+        )}
         {...(viewerRef ? { ref: viewerRef } : {})}
         className={
           className
