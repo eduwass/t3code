@@ -1,3 +1,4 @@
+import { registerMenuAction } from "../shortcuts/dispatcher";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -62,7 +63,7 @@ import {
 import { isElectron } from "~/env";
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import type { RightPanelSurface } from "~/rightPanelStore";
-import { cn } from "~/lib/utils";
+import { cn, isMacPlatform } from "~/lib/utils";
 import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
 import { readLocalApi } from "~/localApi";
 import { useStableCallback } from "~/hooks/useStableCallback";
@@ -1280,6 +1281,64 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     const activeTab = tabListRef.current?.querySelector<HTMLElement>("[data-active-tab='true']");
     activeTab?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [props.activeSurfaceId, tabScrollState.hasOverflow]);
+
+  // ponytail: fork-only, hardcoded panel tab keys while focus is in this panel: Ctrl+Tab and
+  // Ctrl+Shift+Tab cycle, mod+W closes, mod+T adds. They beat keybindings, whose last mod+W rule
+  // can be thread.settle. A focused desktop browser page forwards them as menu actions.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- listens for window keys and desktop menu actions
+  useEffect(() => {
+    const cycle = (direction: 1 | -1) => {
+      const surfaces = props.surfaces;
+      if (surfaces.length < 2) return false;
+      const current = surfaces.findIndex((surface) => surface.id === props.activeSurfaceId);
+      const next = surfaces[(current + direction + surfaces.length) % surfaces.length];
+      if (!next) return false;
+      onActivateTab(next);
+      return true;
+    };
+    const close = () => {
+      const active = props.surfaces.find((surface) => surface.id === props.activeSurfaceId);
+      if (!active) return false;
+      onCloseTab(active);
+      return true;
+    };
+    const add = () => {
+      addSurfaceTriggerRef.current?.focus();
+      setAddSurfaceMenuOpen(true);
+      return true;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.altKey) return;
+      const panel = tabListRef.current?.closest("[data-workspace-area]");
+      if (!panel?.contains(document.activeElement)) return;
+      const mod = isMacPlatform(navigator.platform)
+        ? event.metaKey && !event.ctrlKey
+        : event.ctrlKey && !event.metaKey;
+      const key = event.key.toLowerCase();
+      const handled =
+        event.key === "Tab" && event.ctrlKey && !event.metaKey
+          ? cycle(event.shiftKey ? -1 : 1)
+          : mod && !event.shiftKey && key === "w"
+            ? event.repeat || close()
+            : mod && !event.shiftKey && key === "t"
+              ? event.repeat || add()
+              : false;
+      if (!handled) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    const disposers = [
+      registerMenuAction("rightPanel.nextTab", () => void cycle(1)),
+      registerMenuAction("rightPanel.previousTab", () => void cycle(-1)),
+      registerMenuAction("rightPanel.closeTab", () => void close()),
+      registerMenuAction("rightPanel.newTab", () => void add()),
+    ];
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      for (const dispose of disposers) dispose();
+    };
+  }, [props.surfaces, props.activeSurfaceId, onActivateTab, onCloseTab]);
 
   const attachTabList = (root: HTMLDivElement | null) => {
     tabListRef.current = root;
