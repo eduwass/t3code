@@ -1,17 +1,9 @@
-import { ArrowLeftIcon, ArrowRightIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
-import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
-import { useAtomValue } from "@effect/atom-react";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
-import { shortcutLabelForCommand } from "../../keybindings";
-import {
-  navigateHistory,
-  useCanNavigateHistory,
-  type HistoryDirection,
-} from "../../navigationHistory";
-import { primaryServerKeybindingsAtom } from "../../state/server";
 import { APP_BASE_NAME } from "../../branding";
 import { WindowViewIndicator } from "../../windowView/WindowViewMenu";
 import { cn } from "../../lib/utils";
@@ -22,7 +14,6 @@ import {
   SidebarStageBackdrop,
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
-import { Button } from "../ui/button";
 import {
   SidebarFooter,
   SidebarMenu,
@@ -67,17 +58,8 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           aria-label="Toggle main sidebar"
         />
       </div>
-      {/* T3 Space shows the window's view next to the brand instead of the stage pill. */}
-      <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
-        <div className="flex shrink-0 items-center gap-1">
-          <SidebarBrand onBackdrop={backdropVariant !== null} />
-          {isElectron ? (
-            <div className="hidden items-center md:flex">
-              <HistoryNavigationButton direction="back" onBackdrop={backdropVariant !== null} />
-              <HistoryNavigationButton direction="forward" onBackdrop={backdropVariant !== null} />
-            </div>
-          ) : null}
-        </div>
+      {/* T3 Space shows only the window's view: no brand, history buttons or stage pill. */}
+      <div className="relative z-10 ml-[var(--workspace-titlebar-content-left)] flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
         <WindowViewIndicator />
       </div>
     </div>
@@ -108,63 +90,6 @@ export function SidebarBrandWidthProbe({
         {isElectron ? <div className="w-[calc(2*var(--workspace-titlebar-control-size))]" /> : null}
       </div>
     </div>
-  );
-}
-
-function HistoryNavigationButton({
-  direction,
-  onBackdrop,
-}: {
-  direction: HistoryDirection;
-  onBackdrop: boolean;
-}) {
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const enabled = useCanNavigateHistory(direction);
-  const label = direction === "back" ? "Go back" : "Go forward";
-  const shortcutLabel = shortcutLabelForCommand(
-    keybindings,
-    direction === "back" ? "navigation.back" : "navigation.forward",
-  );
-  const Icon = direction === "back" ? ArrowLeftIcon : ArrowRightIcon;
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            aria-label={label}
-            className={cn(
-              "[-webkit-app-region:no-drag]",
-              onBackdrop && "relative top-auto translate-y-0",
-            )}
-            disabled={!enabled}
-            onClick={() => navigateHistory(direction)}
-            size="icon-sm"
-            variant={onBackdrop ? "media-navigation" : "ghost"}
-          />
-        }
-      >
-        <Icon className="size-3.5" />
-      </TooltipTrigger>
-      <TooltipPopup side="bottom">
-        {label}
-        {shortcutLabel ? ` (${shortcutLabel})` : ""}
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
-function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
-  return (
-    <Link
-      aria-label="T3 Code home"
-      className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
-        onBackdrop ? "text-white" : "text-foreground",
-      )}
-      to="/"
-    >
-      <SidebarBrandMark onBackdrop={onBackdrop} />
-    </Link>
   );
 }
 
