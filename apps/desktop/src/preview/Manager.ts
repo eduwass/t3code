@@ -1500,6 +1500,45 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         host &&
         !host.isDestroyed() &&
         holdsKeyboardFocus(wc);
+      const tabCycle =
+        input.type === "keyDown" &&
+        input.control &&
+        !input.meta &&
+        !input.alt &&
+        input.key === "Tab" &&
+        host &&
+        !host.isDestroyed() &&
+        holdsKeyboardFocus(wc);
+      if (tabCycle && host) {
+        event.preventDefault();
+        host.send(
+          MENU_ACTION_CHANNEL,
+          input.shift ? "rightPanel.previousTab" : "rightPanel.nextTab",
+        );
+        return;
+      }
+      const tabKey =
+        hostPlatform === "darwin" &&
+        input.type === "keyDown" &&
+        input.meta &&
+        !input.control &&
+        !input.alt &&
+        !input.shift &&
+        (input.key.toLowerCase() === "w" || input.key.toLowerCase() === "t") &&
+        host &&
+        !host.isDestroyed() &&
+        holdsKeyboardFocus(wc);
+      if (tabKey && host) {
+        event.preventDefault();
+        if (!input.isAutoRepeat) {
+          host.focus();
+          host.send(
+            MENU_ACTION_CHANNEL,
+            input.key.toLowerCase() === "w" ? "rightPanel.closeTab" : "rightPanel.newTab",
+          );
+        }
+        return;
+      }
       if (paneMove && host) {
         event.preventDefault();
         if (!input.isAutoRepeat) {
