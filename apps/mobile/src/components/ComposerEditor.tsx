@@ -1,4 +1,6 @@
 import * as Dialog from "./ui/Dialog";
+import { PAPER_FRAME_CONTEXT_KIND } from "@t3tools/client-runtime/work-log/paper-frame-references";
+import { openPaperFrameReference } from "../features/paper/paperFrameViewerState";
 import { ComposerContextId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -194,6 +196,11 @@ export function ComposerEditor({
         onContextPress={(selection) => {
           if (chipsInert) {
             onInertChipPress?.();
+            return;
+          }
+          const paperFrame = collectComposerContextReferences(selection.source)[0];
+          if (paperFrame?.kind === PAPER_FRAME_CONTEXT_KIND && environmentId) {
+            openPaperFrameReference(environmentId, paperFrame.contextId, paperFrame.label);
             return;
           }
           const path = composerMentionPath(selection.source, draft.context);

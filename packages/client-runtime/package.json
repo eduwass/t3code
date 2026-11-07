@@ -411,6 +411,10 @@
       "types": "./src/work-log/itemDetail.ts",
       "default": "./src/work-log/itemDetail.ts"
     },
+    "./work-log/paper-frame-references": {
+      "types": "./src/work-log/paperFrameReferences.ts",
+      "default": "./src/work-log/paperFrameReferences.ts"
+    },
     "./work-log/paper-tools": {
       "types": "./src/work-log/paperTools.ts",
       "default": "./src/work-log/paperTools.ts"
