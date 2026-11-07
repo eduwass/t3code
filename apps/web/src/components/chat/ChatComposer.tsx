@@ -1,5 +1,5 @@
 import { VoiceInputSetup } from "./VoiceInputSetup";
-import { paperFrameMentionMarkdown } from "../paper/paperFrameReferences";
+import { paperFrameMentionMarkdown } from "@t3tools/client-runtime/work-log/paper-frame-references";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
