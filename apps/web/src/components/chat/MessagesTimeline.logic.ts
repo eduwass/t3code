@@ -70,6 +70,11 @@ import type { ThreadRunSummary } from "@t3tools/client-runtime/state/shell";
 import type { ToolCallVisibility } from "@t3tools/contracts/settings";
 import { resolveT3McpToolDefinition } from "@t3tools/shared/t3McpToolPresentation";
 import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
+import {
+  paperShotsFromProjectedItems,
+  paperShotsKey,
+  type PaperShot,
+} from "@t3tools/client-runtime/work-log/paper-tools";
 import { htmlRenderReferencesEqual, type HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import { mcpAppReferencesEqual, type McpAppReference } from "@t3tools/shared/mcpApp";
 import { formatDuration } from "@t3tools/shared/orchestrationTimingCopy";
@@ -587,6 +592,7 @@ type MessagesTimelineRowContent =
       toolSurface?: WorkLogEntry["toolSurface"];
       toolIcon?: WorkLogEntry["toolIcon"];
       hasFailure: boolean;
+      paperShots?: ReadonlyArray<PaperShot>;
     }
   | {
       /** Images the agent opened in the tool group above, kept visible while the group is collapsed. */
@@ -2185,6 +2191,9 @@ export function deriveMessagesTimelineRows(
             hasFailure:
               latestToolEntry !== undefined &&
               workEntryDisplayIndicatesToolFailure(latestToolEntry),
+            paperShots: paperShotsFromProjectedItems(
+              visibleGroupedEntries.map((entry) => entry.projectedItem),
+            ),
           });
           if (expanded) {
             nextRows.push(
@@ -2895,7 +2904,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.summaryKind === bw.summaryKind &&
         a.toolSurface === bw.toolSurface &&
         Equal.equals(a.toolIcon, bw.toolIcon) &&
-        a.hasFailure === bw.hasFailure
+        a.hasFailure === bw.hasFailure &&
+        paperShotsKey(a.paperShots) === paperShotsKey(bw.paperShots)
       );
     }
 

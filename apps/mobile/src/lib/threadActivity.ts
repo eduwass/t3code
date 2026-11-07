@@ -1,3 +1,7 @@
+import {
+  paperShotsFromProjectedItems,
+  type PaperShot,
+} from "@t3tools/client-runtime/work-log/paper-tools";
 import type {
   ThreadPendingApproval,
   ThreadPendingUserInput,
@@ -238,6 +242,7 @@ type ThreadFeedEntryContent =
       readonly live: boolean;
       readonly shimmer: boolean;
       readonly thought?: string;
+      readonly paperShots?: ReadonlyArray<PaperShot>;
     }
   | {
       /** Images the agent opened in the tool group above, kept visible while the group is collapsed. */
@@ -2368,6 +2373,7 @@ function appendToolGroupRows(
     })(),
     live,
     shimmer,
+    paperShots: paperShotsFromProjectedItems(activities.map((activity) => activity.projectedItem)),
   });
   if (!expanded) return;
   result.push({

@@ -2329,15 +2329,14 @@ function shellFromState(input: {
 }
 
 // Dynamic tool output the client renders inline (HTML, MCP apps, viewed images, delegated
-// tasks, messages sent to the user), so its work group never defers. Mirrors the LIKE backfill
-// in migration 095, where a tool name counts anywhere after the first toolName. Searching from
-// that first one once avoids rescanning the payload for every nested toolName.
+// tasks, messages sent to the user, Paper screenshots), so its work group never defers.
+// Mirrors migration 095: a tool name counts anywhere after the first toolName.
 const INLINE_WORK_OUTPUT = new RegExp(
   `htmlRender|${MCP_APP_OUTPUT_KEY}|"viewedImagePath"|sentMessage`,
   "i",
 );
 const TOOL_NAME_PREFIX = /"toolName":"/i;
-const INLINE_TOOL_NAME = /(?:delegate.task|send.to.user)"/is;
+const INLINE_TOOL_NAME = /(?:delegate.task|send.to.user|paper[^"]*get.screenshot)"/is;
 
 const isInlineWorkOutput = (payloadJson: string) => {
   if (INLINE_WORK_OUTPUT.test(payloadJson)) return true;
