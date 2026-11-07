@@ -1,3 +1,4 @@
+import { caretRect, flashFocusMove } from "./focusFlash";
 import type { AnyRouter } from "@tanstack/react-router";
 import { dismissContextMenu } from "../contextMenuFallback";
 import { useRightPanelStore } from "../rightPanelStore";
@@ -96,6 +97,65 @@ function revealInScrollers(target: HTMLElement) {
   }
 }
 
+/** Desktop browser pages mount at the app root and sit over their panel, so match by position. */
+function loadedBrowserPage(area: HTMLElement): HTMLElement | undefined {
+  if (!area.querySelector<HTMLInputElement>("[data-preview-url-input]")?.value) return undefined;
+  const box = area.getBoundingClientRect();
+  return Array.from(
+    area.ownerDocument.querySelectorAll<HTMLElement>(
+      "webview[data-preview-tab]:not([aria-hidden])",
+    ),
+  ).find((page) => {
+    const rect = page.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+  });
+}
+
+export type WorkspaceSide = "left" | "right" | "up" | "down";
+
+// Areas touch, and borders can overlap by a pixel.
+const EDGE_TOLERANCE = 2;
+
+/**
+ * Picks the box on `side` of `from`: ones that share a row (or column) with it first,
+ * then the closest edge, then the closest center across the other axis.
+ */
+export function nearestToward<T>(
+  from: DOMRectReadOnly,
+  candidates: ReadonlyArray<{ readonly area: T; readonly box: DOMRectReadOnly }>,
+  side: WorkspaceSide,
+): T | undefined {
+  const horizontal = side === "left" || side === "right";
+  const ranked = candidates.flatMap(({ area, box }) => {
+    const gap =
+      side === "right"
+        ? box.left - from.right
+        : side === "left"
+          ? from.left - box.right
+          : side === "down"
+            ? box.top - from.bottom
+            : from.top - box.bottom;
+    if (gap < -EDGE_TOLERANCE) return [];
+    const overlap = horizontal
+      ? Math.min(box.bottom, from.bottom) - Math.max(box.top, from.top)
+      : Math.min(box.right, from.right) - Math.max(box.left, from.left);
+    const offset = horizontal
+      ? Math.abs(box.top + box.height / 2 - (from.top + from.height / 2))
+      : Math.abs(box.left + box.width / 2 - (from.left + from.width / 2));
+    return [{ area, rank: [overlap > 0 ? 0 : 1, Math.max(gap, 0), offset] }];
+  });
+  ranked.sort((left, right) => {
+    for (let index = 0; index < left.rank.length; index += 1) {
+      const difference = left.rank[index]! - right.rank[index]!;
+      if (difference !== 0) return difference;
+    }
+    return 0;
+  });
+  return ranked[0]?.area;
+}
+
 /** Keeps area focus local, like VS Code's layout service focusPart/visible-neighbour actions. */
 export function createWorkspaceFocusController(doc: Document) {
   const lastFocused = new Map<string, HTMLElement>();
@@ -174,12 +234,21 @@ export function createWorkspaceFocusController(doc: Document) {
     // Moving the timeline to an old control would also stop it following a running turn,
     // so the conversation reuses a control only while it is still in view.
     const isConversation = area.dataset.workspaceArea === "conversation";
-    const targets = new Set([
+    const remembered =
       previous && belongs(previous) && (!isConversation || isInScrollView(previous))
         ? previous
-        : undefined,
-      isConversation ? undefined : restored,
+        : undefined;
+    // A remembered button (a tab's X, Bring back) never beats the pane's text input.
+    const typesText = (element: HTMLElement | undefined) =>
+      element?.isContentEditable ||
+      element?.matches('textarea, input:not([type]), input[type="text"], input[type="search"]') ===
+        true;
+    const targets = new Set([
+      area.dataset.workspaceArea === "panel" ? loadedBrowserPage(area) : undefined,
+      typesText(remembered) ? remembered : undefined,
       preferred,
+      remembered,
+      isConversation ? undefined : restored,
       surfaceControl,
       isConversation ? undefined : fallback,
       area,
@@ -226,7 +295,8 @@ export function createWorkspaceFocusController(doc: Document) {
     }
     return focusArea(area, restore);
   };
-  const move = (direction: 1 | -1, fromArea?: string, closingPalette = false) => {
+  /** The areas a move can reach, or undefined while a popup or modal keeps focus. */
+  const reachableAreas = (closingPalette = false) => {
     // HTML context menus close on blur, unlike modal dialogs and Base UI popups.
     dismissContextMenu(false);
     // A palette closes before running its command. Other popups keep their focus boundary.
@@ -251,15 +321,34 @@ export function createWorkspaceFocusController(doc: Document) {
           isWorkspaceElementVisible(boundary),
       )
     )
-      return false;
-    const areas = Array.from((appModal ?? doc).querySelectorAll<HTMLElement>(AREA_SELECTOR))
-      .filter(isWorkspaceElementVisible)
+      return undefined;
+    const visibleAreas = Array.from(
+      (appModal ?? doc).querySelectorAll<HTMLElement>(AREA_SELECTOR),
+    ).filter(isWorkspaceElementVisible);
+    // The composer stands in for the conversation: its arrow keys scroll the timeline.
+    const conversation = visibleAreas.find((area) => area.dataset.workspaceArea === "conversation");
+    const hasComposer = visibleAreas.some((area) => area.dataset.workspaceArea === "composer");
+    const areas = visibleAreas
+      .filter((area) => !(hasComposer && area === conversation))
       .sort(
         (left, right) => Number(left.dataset.workspaceOrder) - Number(right.dataset.workspaceOrder),
       );
-    if (areas.length === 0) return false;
     const activeArea = doc.activeElement?.closest<HTMLElement>(AREA_SELECTOR);
-    const currentId = fromArea ?? activeArea?.dataset.workspaceArea ?? lastArea;
+    const activeId = activeArea?.dataset.workspaceArea ?? lastArea;
+    return {
+      areas,
+      conversation: hasComposer ? conversation : undefined,
+      currentId: (fromArea: string | undefined) => {
+        const id = fromArea ?? activeId;
+        return hasComposer && id === "conversation" ? "composer" : id;
+      },
+    };
+  };
+  const move = (direction: 1 | -1, fromArea?: string, closingPalette = false) => {
+    const reachable = reachableAreas(closingPalette);
+    if (!reachable || reachable.areas.length === 0) return false;
+    const { areas } = reachable;
+    const currentId = reachable.currentId(fromArea);
     const current = areas.findIndex((area) => area.dataset.workspaceArea === currentId);
     const index =
       current === -1
@@ -269,6 +358,43 @@ export function createWorkspaceFocusController(doc: Document) {
         : (current + direction + areas.length) % areas.length;
     const area = areas[index]!;
     return focusArea(area, true, false);
+  };
+  /** Moves to the nearest visible area on that side of the current one, like a tiling window manager. */
+  const moveToward = (side: WorkspaceSide, fromArea?: string) => {
+    const reachable = reachableAreas();
+    if (!reachable) return false;
+    const { areas, conversation } = reachable;
+    const currentId = reachable.currentId(fromArea);
+    const current = areas.find((area) => area.dataset.workspaceArea === currentId);
+    if (!current) return areas.length > 0 && focus("content");
+    // The chat is one area: the composer's box grows to cover the timeline above it.
+    const boxOf = (area: HTMLElement) => {
+      const rect = area.getBoundingClientRect();
+      if (area.dataset.workspaceArea !== "composer" || !conversation) return rect;
+      const above = conversation.getBoundingClientRect();
+      return DOMRect.fromRect({
+        x: Math.min(rect.left, above.left),
+        y: Math.min(rect.top, above.top),
+        width: Math.max(rect.right, above.right) - Math.min(rect.left, above.left),
+        height: Math.max(rect.bottom, above.bottom) - Math.min(rect.top, above.top),
+      });
+    };
+    const target = nearestToward(
+      boxOf(current),
+      areas.filter((area) => area !== current).map((area) => ({ area, box: boxOf(area) })),
+      side,
+    );
+    // The flash runs from the focused control to the one that takes focus, else the area.
+    const focusedIn = (area: HTMLElement) => {
+      const el = document.activeElement;
+      if (!(el instanceof HTMLElement) || !area.contains(el)) return boxOf(area);
+      return caretRect(el) ?? el.getBoundingClientRect();
+    };
+    const from = focusedIn(current);
+    if (!target || !focusArea(target)) return false;
+    // The editor may restore its text cursor after the focus event, so measure a frame later.
+    requestAnimationFrame(() => flashFocusMove(from, focusedIn(target)));
+    return true;
   };
 
   // Focus that drops to the body because its element was hidden, made inert, disabled, or removed
@@ -351,6 +477,10 @@ export function createWorkspaceFocusController(doc: Document) {
       cancelRequest();
       return move(direction, fromArea, closingPalette);
     },
+    moveToward: (side: WorkspaceSide, fromArea?: string) => {
+      cancelRequest();
+      return moveToward(side, fromArea);
+    },
     focus,
     request,
     dispose: () => {
@@ -400,6 +530,11 @@ export function startWorkspaceFocus(router: AnyRouter): () => void {
 /** Moves to the next or previous visible area. `fromArea` overrides the focused area. */
 export function moveWorkspaceFocus(direction: 1 | -1, fromArea?: string): boolean {
   return controller?.move(direction, fromArea) ?? false;
+}
+
+/** Moves to the nearest visible area on one side. False when there is none, so the key does its usual job. */
+export function moveWorkspaceFocusToward(side: WorkspaceSide, fromArea?: string): boolean {
+  return controller?.moveToward(side, fromArea) ?? false;
 }
 
 /** Explicit user actions request focus after React has committed the destination. */

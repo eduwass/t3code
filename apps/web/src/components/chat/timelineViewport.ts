@@ -163,6 +163,10 @@ export function attachTimelineViewport(
   };
   // Run before frame listeners resize rows, so an accordion cannot drag the reader to the end.
   window.addEventListener("message", handleFrameResize, true);
+  // A click in the timeline would otherwise focus the conversation region around it, which
+  // cannot scroll, so the arrow, page and Home/End keys did nothing.
+  scrollNode.tabIndex = -1;
+  scrollNode.style.outline = "none";
   scrollNode.addEventListener("scroll", handleScroll, { passive: true });
   scrollNode.addEventListener("wheel", handleWheel, { passive: true });
   scrollNode.addEventListener("touchmove", handleTouchMove, { passive: true });

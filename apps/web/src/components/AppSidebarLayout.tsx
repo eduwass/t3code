@@ -9,7 +9,12 @@ import {
 } from "react";
 import { useLocation, useRouter, type AnyRouter } from "@tanstack/react-router";
 
-import { moveWorkspaceFocus, workspaceAreaProps } from "../lib/workspaceFocus";
+import {
+  moveWorkspaceFocus,
+  moveWorkspaceFocusToward,
+  workspaceAreaProps,
+  type WorkspaceSide,
+} from "../lib/workspaceFocus";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { isElectron } from "../env";
 import {
@@ -171,6 +176,40 @@ export function registerNavigationHistoryCommands(router: AnyRouter): () => void
   );
 }
 
+const ARROW_SIDES: Record<string, WorkspaceSide> = {
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  ArrowUp: "up",
+  ArrowDown: "down",
+};
+
+/**
+ * ponytail: fork-only, hardcoded Cmd+Arrow on macOS rather than keybinding commands,
+ * because the devbox server resolves keybindings and runs upstream's command list.
+ * With no area on that side the key keeps its usual job (Cmd+Down still ends the chat).
+ */
+function registerDirectionalFocusKeys(): () => void {
+  const onKeyDown = (event: KeyboardEvent) => {
+    const side = ARROW_SIDES[event.key];
+    if (
+      !side ||
+      !event.metaKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.shiftKey ||
+      event.isComposing ||
+      !isMacPlatform(navigator.platform) ||
+      isKeybindingCaptureTarget(event) ||
+      !moveWorkspaceFocusToward(side)
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  window.addEventListener("keydown", onKeyDown, true);
+  return () => window.removeEventListener("keydown", onKeyDown, true);
+}
+
 // Capture phase, so F6 also leaves widgets that swallow keys, such as the terminal.
 function registerWorkspaceFocusCommands(router: AnyRouter): () => void {
   const move = (direction: 1 | -1) => (event: KeyboardEvent) => {
@@ -192,6 +231,9 @@ function registerWorkspaceFocusCommands(router: AnyRouter): () => void {
     // A focused desktop browser forwards the keys; its renderer focus is stale.
     registerMenuAction("workspace.focusNext", () => moveWorkspaceFocus(1, "panel")),
     registerMenuAction("workspace.focusPrevious", () => moveWorkspaceFocus(-1, "panel")),
+    registerMenuAction("workspace.focusLeft", () => moveWorkspaceFocusToward("left", "panel")),
+    registerMenuAction("workspace.focusRight", () => moveWorkspaceFocusToward("right", "panel")),
+    registerDirectionalFocusKeys(),
   ];
   return () => {
     for (const dispose of disposers) dispose();
