@@ -1,6 +1,6 @@
 import { copySnapshot } from "./copySnapshot";
 import { VoiceInputSetup } from "./VoiceInputSetup";
-import { paperFrameMentionMarkdown } from "../paper/paperFrameReferences";
+import { paperFrameMentionMarkdown } from "@t3tools/client-runtime/work-log/paper-frame-references";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
 import type { ComposerAttachmentInsertion } from "../composerAttachmentInsertion";

@@ -1,5 +1,6 @@
 import {
   paperShotsFromProjectedItems,
+  paperShotsKey,
   type PaperShot,
 } from "@t3tools/client-runtime/work-log/paper-tools";
 import type {
@@ -263,6 +264,7 @@ type ThreadFeedEntryContent =
       readonly runId: RunId;
       readonly label: string;
       readonly expanded: boolean;
+      readonly paperShots?: ReadonlyArray<PaperShot>;
     }
   | {
       readonly type: "thinking";
@@ -1836,6 +1838,7 @@ export function deriveThreadFeedPresentation(
         failedRunIds,
         resolve,
       );
+  const sourceEntriesById = new Map(sourceFeed.map((entry) => [entry.id, entry]));
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorId.values()) {
     if (!expandedRunIds.has(fold.runId)) {
@@ -1893,9 +1896,21 @@ export function deriveThreadFeedPresentation(
     const fold = foldsByAnchorId.get(entry.id);
     if (fold) {
       const expanded = expandedRunIds.has(fold.runId);
+      // T3 Space fork: a collapsed run still shows its Paper screenshots.
+      const paperShots = expanded
+        ? []
+        : paperShotsFromProjectedItems(
+            [...fold.hiddenEntryIds].flatMap((id) => {
+              const hidden = sourceEntriesById.get(id);
+              return hidden?.type === "activity-group"
+                ? hidden.activities.map((activity) => activity.projectedItem)
+                : [];
+            }),
+          );
       let row = runFoldRowsCache.get(entry);
       if (
         !row ||
+        paperShotsKey(row.paperShots) !== paperShotsKey(paperShots) ||
         row.runId !== fold.runId ||
         row.createdAt !== fold.createdAt ||
         row.label !== fold.label ||
@@ -1910,6 +1925,7 @@ export function deriveThreadFeedPresentation(
           runId: fold.runId,
           label: fold.label,
           expanded,
+          ...(paperShots.length > 0 ? { paperShots } : {}),
         };
         runFoldRowsCache.set(entry, row);
       }

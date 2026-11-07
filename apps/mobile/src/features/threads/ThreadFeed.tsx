@@ -9,6 +9,8 @@ import { ListActionRow } from "../../components/ui/ListActionRow";
 import { ListSection } from "../../components/ui/ListSection";
 import { collectMobileAssistantTextSelectors } from "../../lib/assistantCitationSelection";
 import { Button } from "../../components/ui/Button";
+import { PAPER_FRAME_CONTEXT_KIND } from "@t3tools/client-runtime/work-log/paper-frame-references";
+import { openPaperFrameReference } from "../paper/paperFrameViewerState";
 import * as Dialog from "../../components/ui/Dialog";
 import { ASSISTANT_CITATION_MAX_TEXT_LENGTH, type AssistantCitation } from "@t3tools/contracts";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
@@ -2062,7 +2064,7 @@ function renderFeedEntry(
   }
 
   if (entry.type === "run-fold") {
-    return (
+    const fold = (
       <View className="mb-1 flex-row items-center border-b border-border-subtle px-2">
         {entry.workingSince ? (
           <RunFoldWorking
@@ -2089,6 +2091,15 @@ function renderFeedEntry(
           />
         ) : null}
       </View>
+    );
+    // T3 Space fork: Paper thumbnails stay visible while the run is folded.
+    return entry.paperShots?.length ? (
+      <>
+        {fold}
+        <PaperShotsStrip environmentId={props.environmentId} shots={entry.paperShots} />
+      </>
+    ) : (
+      fold
     );
   }
 
@@ -2197,11 +2208,7 @@ function renderFeedEntry(
     return entry.paperShots?.length ? (
       <>
         {toggle}
-        <PaperShotsStrip
-          environmentId={props.environmentId}
-          shots={entry.paperShots}
-          onPressPreview={props.onPressPreview}
-        />
+        <PaperShotsStrip environmentId={props.environmentId} shots={entry.paperShots} />
       </>
     ) : (
       toggle
@@ -2802,6 +2809,14 @@ function UserMessageContent(props: UserMessageContentProps) {
     const record = props.context?.records.find(
       (record) => record.contextId === reference.contextId,
     );
+    if (reference.kind === PAPER_FRAME_CONTEXT_KIND) {
+      openPaperFrameReference(
+        props.environmentId,
+        reference.contextId,
+        record?.label ?? "Paper frame",
+      );
+      return;
+    }
     if (record?.kind === "mention" && "path" in record) {
       props.linkHandlers.onLinkPress?.(record.path);
       return;
@@ -4153,7 +4168,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     }
     switch (entry.type) {
       case "run-fold":
-        return resolveThreadFeedFixedItemSize(entry.type);
+        return entry.paperShots?.length ? undefined : resolveThreadFeedFixedItemSize(entry.type);
       case "work-toggle":
         return entry.thought ? undefined : WORK_GROUP_TOGGLE_HEIGHT;
       case "thinking":
