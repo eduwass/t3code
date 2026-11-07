@@ -6,7 +6,14 @@ import {
   OrchestrationV2SearchThreadsResult,
 } from "./orchestrationV2.ts";
 import { OrchestrationDispatchCommandError } from "./orchestrationDispatch.ts";
-import { PaperRequest, PaperResponse, PaperUnavailableError } from "./paper.ts";
+import {
+  PaperAccountRequest,
+  PaperAccountResponse,
+  PaperRequest,
+  PaperResponse,
+  PaperSignInError,
+  PaperUnavailableError,
+} from "./paper.ts";
 import {
   McpAppCallToolInput,
   McpAppCallToolResult,
@@ -595,6 +602,7 @@ export const WS_METHODS = {
   serverGetConfig: "server.getConfig",
   serverGetNpmRelease: "server.getNpmRelease",
   paperRequest: "paper.request",
+  paperAccount: "paper.account",
   serverRefreshProviders: "server.refreshProviders",
   serverGetProviderRuntimeModeLimits: "server.getProviderRuntimeModeLimits",
   serverUpdateProvider: "server.updateProvider",
@@ -937,6 +945,13 @@ const WsPaperRequestRpc = Rpc.make(WS_METHODS.paperRequest, {
   payload: PaperRequest,
   success: PaperResponse,
   error: Schema.Union([PaperUnavailableError, EnvironmentAuthorizationError]),
+});
+
+// Signing in or out replaces the server's Paper credential.
+const WsPaperAccountRpc = Rpc.make(WS_METHODS.paperAccount, {
+  payload: PaperAccountRequest,
+  success: PaperAccountResponse,
+  error: Schema.Union([PaperSignInError, EnvironmentAuthorizationError]),
 });
 
 const WsServerGetNpmReleaseRpc = Rpc.make(WS_METHODS.serverGetNpmRelease, {
@@ -2550,6 +2565,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpdateServerRpc,
   WsServerGetNpmReleaseRpc,
   WsPaperRequestRpc,
+  WsPaperAccountRpc,
   WsServerUpdateServerWithProgressRpc,
   WsServerCommitDesktopUpdateRpc,
   WsServerUpsertKeybindingRpc,

@@ -20,7 +20,48 @@ export const PaperFrame = Schema.Struct({
 });
 export type PaperFrame = typeof PaperFrame.Type;
 
+/** The two ways T3 reaches Paper: the Desktop app's MCP, or Paper's hosted MCP with an account. */
+export const PaperConnectionKind = Schema.Literals(["desktop", "account"]);
+export type PaperConnectionKind = typeof PaperConnectionKind.Type;
+
+/** One entry in the user's ordered list; T3 tries enabled entries top to bottom. */
+export const PaperConnectionSetting = Schema.Struct({
+  kind: PaperConnectionKind,
+  enabled: Schema.Boolean,
+});
+export type PaperConnectionSetting = typeof PaperConnectionSetting.Type;
+
+export const DEFAULT_PAPER_CONNECTIONS: ReadonlyArray<PaperConnectionSetting> = [
+  { kind: "desktop", enabled: true },
+  { kind: "account", enabled: true },
+];
+
+/** The saved order with each kind once; kinds missing from it are appended, switched on. */
+export function paperConnectionOrder(
+  saved: ReadonlyArray<PaperConnectionSetting>,
+): ReadonlyArray<PaperConnectionSetting> {
+  const seen = new Set<PaperConnectionKind>();
+  const order = [...saved, ...DEFAULT_PAPER_CONNECTIONS].filter((entry) => {
+    if (seen.has(entry.kind)) return false;
+    seen.add(entry.kind);
+    return true;
+  });
+  return order;
+}
+
+export const PaperConnectionStatus = Schema.Struct({
+  kind: PaperConnectionKind,
+  enabled: Schema.Boolean,
+  /** `missing`: no Desktop found, or no account signed in. `down`: the last call failed. */
+  state: Schema.Literals(["in-use", "ready", "down", "missing", "off"]),
+  /** The Desktop's machine, or the account's email. */
+  label: Schema.NullOr(Schema.String),
+  latencyMs: Schema.NullOr(Schema.Number),
+});
+export type PaperConnectionStatus = typeof PaperConnectionStatus.Type;
+
 export const PaperRequest = Schema.Union([
+  Schema.TaggedStruct("connections", {}),
   Schema.TaggedStruct("frameNames", {
     frames: Schema.Array(PaperFrameRef).check(Schema.isMaxLength(64)),
   }),
@@ -37,6 +78,7 @@ export const PaperRequest = Schema.Union([
 export type PaperRequest = typeof PaperRequest.Type;
 
 export const PaperResponse = Schema.Union([
+  Schema.TaggedStruct("connections", { connections: Schema.Array(PaperConnectionStatus) }),
   Schema.TaggedStruct("frameNames", { frames: Schema.Array(PaperFrame) }),
   Schema.TaggedStruct("listFrames", {
     fileName: Schema.NullOr(Schema.String),
@@ -60,5 +102,38 @@ export class PaperUnavailableError extends Schema.TaggedError<PaperUnavailableEr
 ) {
   override get message(): string {
     return `Paper is unavailable (${this.reason}): ${this.detail}`;
+  }
+}
+
+/** Signs this server in to a Paper account with a device code, or out of it. */
+export const PaperAccountRequest = Schema.Union([
+  Schema.TaggedStruct("signInStart", {}),
+  /** Resolves when the sign-in `signInStart` began ends, however long the user takes. */
+  Schema.TaggedStruct("signInWait", {}),
+  Schema.TaggedStruct("signInCancel", {}),
+  Schema.TaggedStruct("signOut", {}),
+]);
+export type PaperAccountRequest = typeof PaperAccountRequest.Type;
+
+export const PaperAccountResponse = Schema.Union([
+  /** The user approves `userCode` at `verificationUri`; `verificationUriComplete` carries it. */
+  Schema.TaggedStruct("signInStart", {
+    userCode: TrimmedNonEmptyString,
+    verificationUri: TrimmedNonEmptyString,
+    verificationUriComplete: Schema.NullOr(TrimmedNonEmptyString),
+    expiresAt: Schema.Number,
+  }),
+  Schema.TaggedStruct("signInWait", { email: Schema.NullOr(Schema.String) }),
+  Schema.TaggedStruct("signInCancel", {}),
+  Schema.TaggedStruct("signOut", {}),
+]);
+export type PaperAccountResponse = typeof PaperAccountResponse.Type;
+
+export class PaperSignInError extends Schema.TaggedError<PaperSignInError>()("PaperSignInError", {
+  reason: Schema.Literals(["not-started", "cancelled", "denied", "expired", "failed"]),
+  detail: Schema.String,
+}) {
+  override get message(): string {
+    return `Paper sign-in ${this.reason}: ${this.detail}`;
   }
 }
