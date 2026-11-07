@@ -84,7 +84,7 @@ Quoted text and comments count toward the message length limit and are preserved
 
 ## Recall a sent prompt
 
-Press `ArrowUp` in an empty composer to cycle backward through earlier prompts in the thread, and `ArrowDown` to move forward. Only prompt text is restored (not attachments or context chips). Editing a recalled prompt turns it into a normal draft.
+In an empty composer, `ArrowUp` and `ArrowDown` scroll the conversation, and `mod+ArrowUp` and `mod+ArrowDown` jump to its start and end. Press `Shift+ArrowUp` to cycle backward through earlier prompts in the thread, and `Shift+ArrowDown` to move forward. Only prompt text is restored (not attachments or context chips). Editing a recalled prompt turns it into a normal draft.
 
 ## Suggested next prompt
 

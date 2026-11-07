@@ -4,9 +4,11 @@ Navigate T3 Code's workspace, sidebar, and settings entirely from the keyboard o
 
 ## Move between workspace areas
 
-Press `F6` or `Shift+F6` to cycle between visible workspace areas—the Threads sidebar, conversation, composer, and open panels (or the section list and content pane in Settings). Each area remembers its last focused control, and hidden areas are skipped.
+Press `F6` or `Shift+F6` to cycle between visible workspace areas—the Threads sidebar, composer, and open panels (or the section list and content pane in Settings). The conversation is not a stop of its own unless a thread has no composer: the arrow keys in an empty composer scroll it instead. A browser panel with a page loaded focuses the page, not its address bar. Each area remembers its last focused control, and hidden areas are skipped.
 
 In a web browser, plain `F6` may focus the browser toolbar. Use `mod+F6` and `mod+Shift+F6` instead (`Cmd` on macOS, `Ctrl` elsewhere), or run **Focus Next / Previous Workspace Area** from the command palette.
+
+On macOS, `Command+Arrow` moves by direction instead: it jumps to the nearest visible area on that side. When there is no area on that side, the key keeps its usual job, so `Command+Down` in an empty composer still scrolls to the end. In a browser panel's page, only `Command+Left` and `Command+Right` move; Up and Down scroll the page.
 
 ## Browse threads and settings
 
