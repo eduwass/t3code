@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { createWorkspaceFocusController } from "./workspaceFocus";
+import { createWorkspaceFocusController, nearestToward } from "./workspaceFocus";
 
 function setup() {
   const root = document.createElement("div");
@@ -39,9 +39,12 @@ describe("workspace area focus", () => {
     const conversation = fixture.area("conversation", 1);
     const composer = fixture.area("composer", 2);
     sidebar.button.focus();
+    // The composer stands in for the conversation, so the cycle skips it.
     fixture.controller.move(1);
-    // The conversation is a region; it takes focus itself rather than its first button.
-    expect(document.activeElement).toBe(conversation.element);
+    expect(document.activeElement).toBe(composer.button);
+    conversation.button.focus();
+    fixture.controller.move(-1);
+    expect(document.activeElement).toBe(sidebar.button);
     fixture.controller.move(1);
     expect(document.activeElement).toBe(composer.button);
     fixture.controller.move(1);
@@ -50,6 +53,31 @@ describe("workspace area focus", () => {
     expect(document.activeElement).toBe(sidebar.button);
     fixture.controller.move(-1);
     expect(document.activeElement).toBe(panel.button);
+  });
+
+  it("picks the nearest area on a side, preferring ones in the same row or column", () => {
+    const box = (x: number, y: number, width: number, height: number) =>
+      DOMRect.fromRect({ x, y, width, height });
+    // Sidebar | chat over a terminal | panel, with the terminal under the chat only.
+    const sidebar = { area: "sidebar", box: box(0, 0, 200, 800) };
+    const chat = { area: "chat", box: box(200, 0, 600, 600) };
+    const terminal = { area: "terminal", box: box(200, 600, 600, 200) };
+    const panel = { area: "panel", box: box(800, 0, 400, 800) };
+    const all = [sidebar, chat, terminal, panel];
+    const from = (start: { box: DOMRect }, side: "left" | "right" | "up" | "down") =>
+      nearestToward(
+        start.box,
+        all.filter((candidate) => candidate.box !== start.box),
+        side,
+      );
+    expect(from(chat, "left")).toBe("sidebar");
+    expect(from(chat, "right")).toBe("panel");
+    expect(from(chat, "down")).toBe("terminal");
+    expect(from(chat, "up")).toBeUndefined();
+    expect(from(terminal, "up")).toBe("chat");
+    expect(from(terminal, "right")).toBe("panel");
+    expect(from(panel, "left")).toBe("chat");
+    expect(from(sidebar, "left")).toBeUndefined();
   });
 
   it("skips hidden, inert, and maximized-away areas", () => {
@@ -201,9 +229,37 @@ describe("workspace area focus", () => {
     expect(document.activeElement).toBe(composer.button);
     // Live follow moved the timeline to the newest output.
     timeline.scrollTop = 300;
+    // Without a composer the conversation is a stop of its own.
+    composer.element.hidden = true;
     fixture.controller.move(-1);
     expect(document.activeElement).toBe(conversation.element);
     expect(timeline.scrollTop).toBe(300);
+  });
+
+  it("focuses the loaded browser page over the panel instead of its address bar", () => {
+    using fixture = setup();
+    const composer = fixture.area("composer", 2);
+    const panel = fixture.area("panel", 4);
+    panel.element.style.cssText =
+      "position: fixed; left: 400px; top: 0; width: 300px; height: 300px";
+    const address = document.createElement("input");
+    address.dataset.previewUrlInput = "";
+    address.dataset.workspaceFocusDefault = "";
+    panel.element.append(address);
+    const page = (left: number) =>
+      fixture.append(
+        `<webview data-preview-tab tabindex="-1" style="display: block; position: fixed; left: ${left}px; top: 40px; width: 300px; height: 200px"></webview>`,
+      );
+    page(0);
+    const overPanel = page(400);
+    composer.button.focus();
+    fixture.controller.move(1);
+    // A blank tab has nothing to type into but the address bar.
+    expect(document.activeElement).toBe(address);
+    address.value = "https://linear.app";
+    composer.button.focus();
+    fixture.controller.move(1);
+    expect(document.activeElement).toBe(overPanel);
   });
 
   it("returns focus to the area when its focused control disappears", async () => {
