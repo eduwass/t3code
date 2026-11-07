@@ -182,6 +182,7 @@ import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import * as ProviderInstallation from "./provider/providerInstallation.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as NpmRelease from "./cloud/npmRelease.ts";
+import * as PaperService from "./paper/PaperService.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
@@ -1508,6 +1509,7 @@ export const layerWsRpc = (
       const providerInstallation = yield* ProviderInstallation.ProviderInstallation;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const npmRelease = yield* NpmRelease.NpmRelease;
+      const paperService = yield* PaperService.PaperService;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
@@ -2684,6 +2686,7 @@ export const layerWsRpc = (
         [WS_METHODS.providerInstallRemove]: (input) => providerInstallation.remove(input),
         [WS_METHODS.serverUpdateServer]: (input) => serverSelfUpdate.update(input),
         [WS_METHODS.serverGetNpmRelease]: (input) => npmRelease.get(input),
+        [WS_METHODS.paperRequest]: (input) => paperService.request(input),
         [WS_METHODS.serverUpdateServerWithProgress]: (input) =>
           ServerSelfUpdate.updateProgressStream(serverSelfUpdate, input),
         [WS_METHODS.serverCommitDesktopUpdate]: (input) =>

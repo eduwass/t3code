@@ -512,6 +512,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["beta paper design mockup artboard frame thumbnails canvas"],
   },
   {
+    id: "paper-live-frames",
+    title: "Live Paper frames (experiment)",
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: ["experiment paper live html frame sharp zoom viewer"],
+  },
+  {
     id: "simlock-hosts",
     title: "Simlock device hosts (alpha)",
     to: "/settings/labs",
