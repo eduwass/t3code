@@ -491,6 +491,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["beta link another machine vps peer agents work there delegate"],
   },
   {
+    id: "paper-integration",
+    title: "Paper integration (T3 Space)",
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: ["beta paper design mockup artboard frame thumbnails canvas"],
+  },
+  {
     id: "simlock-hosts",
     title: "Simlock device hosts (alpha)",
     to: "/settings/labs",

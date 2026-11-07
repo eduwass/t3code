@@ -141,6 +141,7 @@ import { useLocalAttachmentPreview } from "../../lib/localAttachmentPreview";
 import { messageImageGallery } from "./messageImageGallery";
 import { MARKDOWN_IMAGE_MAX_WIDTH, resolveMarkdownImageDisplaySize } from "./markdownImageSize";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
+import { PaperShotsStrip } from "../paper/PaperShotsStrip";
 import { inlineFilePreviewKind, isPdfFile } from "../../lib/filePreview";
 import { ThreadInlineFilePreview } from "./ThreadInlineFilePreview";
 import { flattenThemeColor } from "../../lib/mobileTheme";
@@ -1778,7 +1779,7 @@ function renderFeedEntry(
   }
 
   if (entry.type === "work-toggle") {
-    return (
+    const toggle = (
       <ThreadWorkGroupToggle
         environmentId={props.environmentId}
         rowSizing={props.workRowSizing}
@@ -1804,6 +1805,19 @@ function renderFeedEntry(
         }
         onToggle={() => props.onToggleWorkGroup(entry.groupId, entry.id)}
       />
+    );
+    // T3 Space fork: Paper thumbnails under the group.
+    return entry.paperShots?.length ? (
+      <>
+        {toggle}
+        <PaperShotsStrip
+          environmentId={props.environmentId}
+          shots={entry.paperShots}
+          onPressPreview={props.onPressPreview}
+        />
+      </>
+    ) : (
+      toggle
     );
   }
 
