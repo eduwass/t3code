@@ -144,6 +144,31 @@ const make = Effect.fn("PaperService.make")(function* () {
     { capacity: 64, timeToLive: keepSuccesses(Duration.seconds(30)) },
   );
 
+  const frameImages = yield* Cache.makeWith(
+    Effect.fn("PaperService.frameImage")(function* (cacheKey: string) {
+      const [fileId, nodeId] = split(cacheKey);
+      const result = yield* call("get_screenshot", { fileId, nodeId, scale: 0.5 });
+      const image = result.content.find(
+        (block) => block.type === "image" && typeof block.data === "string",
+      );
+      if (result.isError || image?.data === undefined)
+        return yield* failed("Paper returned no image.");
+      const extension = image.mimeType === "image/png" ? "png" : "jpg";
+      // No extension in the id, so the asset route serves it inline as an image.
+      const attachmentId = createPendingAttachmentId();
+      const filePath = resolveAttachmentRelativePath({
+        attachmentsDir: config.attachmentsDir,
+        relativePath: `${attachmentId}.${extension}`,
+      });
+      if (filePath === null) return yield* failed("Invalid attachment path.");
+      yield* fileSystem
+        .writeFile(filePath, Buffer.from(image.data, "base64"))
+        .pipe(Effect.mapError(() => failed("Could not store the image.")));
+      return { _tag: "frameImage" as const, attachmentId };
+    }),
+    { capacity: 256, timeToLive: keepSuccesses(Duration.minutes(2)) },
+  );
+
   // Frames reference the file's design tokens as CSS variables; without them colors fall back.
   const fileTokens = yield* Cache.makeWith(
     Effect.fn("PaperService.fileTokens")(function* (fileId: string) {
@@ -214,6 +239,8 @@ const make = Effect.fn("PaperService.make")(function* () {
         }
         case "listFrames":
           return yield* Cache.get(fileFrames, input.fileId);
+        case "frameImage":
+          return yield* Cache.get(frameImages, key(input.fileId, input.nodeId));
         case "liveFrame":
           return yield* Cache.get(
             liveFrames,

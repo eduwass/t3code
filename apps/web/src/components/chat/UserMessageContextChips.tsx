@@ -3,6 +3,7 @@ import type { MessageResolver } from "~/i18n/messages";
 import { useNativeFileDrag } from "../../useNativeFileDrag";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { documentChipKindForFileName } from "~/pierre-icons";
+import { PAPER_FRAME_CONTEXT_KIND, PaperFrameContextChip } from "../paper/composerPaperFrames";
 import { isSvgAttachment } from "@t3tools/shared/image";
 import { useRenderedAppearance } from "../../hooks/useTheme";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
@@ -567,6 +568,11 @@ export function UserMessageContextReferenceChip(props: {
 }) {
   const { resolvedTheme, activeThreadEnvironmentId } = use(TimelineRowCtx);
   const m = useMessages();
+  if (props.reference.kind === PAPER_FRAME_CONTEXT_KIND) {
+    return (
+      <PaperFrameContextChip contextId={props.reference.contextId} label={props.reference.label} />
+    );
+  }
   const copyMarkdown = formatComposerContextReference({
     kind: props.reference.kind,
     contextId: props.reference.contextId as ComposerContextId,
