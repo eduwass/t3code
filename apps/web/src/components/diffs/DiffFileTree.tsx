@@ -7,6 +7,7 @@ import { useStableCallback } from "~/hooks/useStableCallback";
 import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
 import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
+import { useFileTreeIcons } from "~/fileTreeLook/fileTreeLook";
 
 import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "../files/fileTreeExpansion";
 import { Button } from "../ui/button";
@@ -46,7 +47,7 @@ export function DiffFileTree({
 }: DiffFileTreeProps) {
   const { resolvedTheme } = useTheme();
   const paths = entries.map((entry) => entry.path);
-  const presented = diffFileTreeModel(paths);
+  const presented = diffFileTreeModel(paths, useFileTreeIcons());
   const modelPaths = presented.paths;
   const icons = presented.icons;
   const directoryPaths = collectDirectoryPaths(modelPaths);
@@ -188,7 +189,6 @@ export function DiffFileTree({
       >
         <span className="px-1 font-medium text-foreground">Files</span>
         <span className="ml-auto tabular-nums">{entries.length}</span>
-        {headerAccessory}
         {directoryPaths.length > 0 ? (
           <Tooltip>
             <TooltipTrigger
@@ -216,6 +216,7 @@ export function DiffFileTree({
             </TooltipPopup>
           </Tooltip>
         ) : null}
+        {headerAccessory}
       </div>
       <FileTree
         model={model}

@@ -31,7 +31,6 @@ import {
 } from "lucide-react";
 import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide";
 import { useAtomRefresh } from "@effect/atom-react";
-import * as Schema from "effect/Schema";
 import {
   createContext,
   use,
@@ -43,7 +42,7 @@ import {
 } from "react";
 
 import { observeIntersection } from "~/lib/observeIntersection";
-import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { useDiffFileTreeOpen } from "~/fileTreeLook/fileTreeLook";
 import { useClientSettings, updateClientSettings } from "~/hooks/useSettings";
 import { useRenderedAppearance } from "~/hooks/useTheme";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
@@ -384,11 +383,7 @@ function PullRequestCodeTab({
   const diffLayout = settings.diffLayout;
   const [wordWrap, setWordWrap] = useState(settings.wordWrap);
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(settings.diffIgnoreWhitespace);
-  const [fileTreeOpen, setFileTreeOpen] = useLocalStorage(
-    PULL_REQUEST_FILE_TREE_STORAGE_KEY,
-    false,
-    Schema.Boolean,
-  );
+  const [fileTreeOpen, setFileTreeOpen] = useDiffFileTreeOpen(PULL_REQUEST_FILE_TREE_STORAGE_KEY);
   const [hideTestFiles, setHideTestFiles] = useHideTestFiles();
   const [selectedLines, setSelectedLines] = useState<{
     id: string;

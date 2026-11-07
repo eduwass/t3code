@@ -518,6 +518,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["beta syntax highlighting theme shiki pierre engine colors code linear vscode"],
   },
   {
+    id: "file-tree-look",
+    title: "File tree tuning (T3 Space)",
+    to: "/settings/labs",
+    searchTerms: ["beta file tree folders font size indent icon pack icons expanded diff sidebar"],
+  },
+  {
     id: "paper-live-frames",
     title: "Live Paper frames (experiment)",
     to: "/settings/labs",

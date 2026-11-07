@@ -11,6 +11,7 @@ import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsL
 import { searchableSetting } from "./settingsSearch";
 import { PaperIntegrationRow } from "./PaperIntegrationRow";
 import { CodeThemesLabsRow } from "../../codeThemes/CodeThemeSettings";
+import { FileTreeLookLabsRow } from "../../fileTreeLook/FileTreeLookSettings";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
 import { firstManagedDenial, usePrimaryManagedPolicy } from "~/state/managedPolicy";
@@ -29,6 +30,7 @@ export function LabsSettingsPanel() {
         <FastWorktreeCheckoutRow />
         <PaperIntegrationRow />
         <CodeThemesLabsRow />
+        <FileTreeLookLabsRow />
       </SettingsSection>
     </SettingsPageContainer>
   );

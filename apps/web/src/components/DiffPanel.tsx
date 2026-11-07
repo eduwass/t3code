@@ -19,7 +19,6 @@ import {
   TextWrapIcon,
 } from "lucide-react";
 import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide";
-import * as Schema from "effect/Schema";
 import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { useCodeViewFileReveal } from "./diffs/useCodeViewFileReveal";
 import { useFilesystemReadAccess } from "~/state/filesystem";
@@ -38,7 +37,7 @@ import {
   useDiffPanelSessionStore,
   useDiffPanelStore,
 } from "../diffPanelStore";
-import { useLocalStorage } from "../hooks/useLocalStorage";
+import { useDiffFileTreeOpen } from "../fileTreeLook/fileTreeLook";
 import { isTestChangedFile } from "@t3tools/shared/changedFileKind";
 import { useHideTestFiles } from "./diffs/useHideTestFiles";
 import { useRenderedAppearance } from "../hooks/useTheme";
@@ -66,7 +65,7 @@ import { DiffFilePathCopyButton } from "./DiffFilePathCopyButton";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
 import { DiffStatLabel } from "./chat/DiffStatLabel";
 import { AnnotatableCodeView } from "./diffs/AnnotatableCodeView";
-import { DiffFileTree } from "./diffs/DiffFileTree";
+import { DiffAllFilesTree } from "../fileTreeLook/DiffAllFilesTree";
 import { FileExplorerPane } from "./files/FileExplorerPane";
 import { diffFileTreeEntries } from "./diffs/diffFileTree.logic";
 import { Button } from "./ui/button";
@@ -231,11 +230,7 @@ export default function DiffPanel({
   const diffLayout = settings.diffLayout;
   const [wordWrap, setWordWrap] = useState(settings.wordWrap);
   const [diffIgnoreWhitespace, setDiffIgnoreWhitespace] = useState(settings.diffIgnoreWhitespace);
-  const [fileTreeOpen, setFileTreeOpen] = useLocalStorage(
-    DIFF_FILE_TREE_STORAGE_KEY,
-    false,
-    Schema.Boolean,
-  );
+  const [fileTreeOpen, setFileTreeOpen] = useDiffFileTreeOpen(DIFF_FILE_TREE_STORAGE_KEY);
   const [hideTestFiles, setHideTestFiles] = useHideTestFiles();
   const [baseRefQuery, setBaseRefQuery] = useState("");
   // The open commit menu keeps the list it opened with, so rows do not move under the pointer.
@@ -1501,12 +1496,24 @@ export default function DiffPanel({
                     defaultWidthFraction={0.4}
                     resizeLabel="Resize Changes files"
                   >
-                    <DiffFileTree
+                    <DiffAllFilesTree
                       ariaLabel={`${reviewSectionTitle} files`}
                       entries={fileTreeEntries}
                       selectedPath={selectedFilePath}
                       revealRequestId={selectedFileRevealRequestId}
                       onSelectFile={revealDiffFile}
+                      revealDiffFile={revealDiffFile}
+                      project={
+                        activeThread && activeCwd && routeThreadRef
+                          ? {
+                              environmentId: activeThread.environmentId,
+                              cwd: activeCwd,
+                              name: activeProject?.title ?? activeCwd,
+                              threadRef: routeThreadRef,
+                              workspaceMutationId,
+                            }
+                          : null
+                      }
                     />
                   </FileExplorerPane>
                 ) : null}

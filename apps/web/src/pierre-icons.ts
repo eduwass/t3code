@@ -237,16 +237,14 @@ export function resolvePierreIconForEntry(
   pathValue: string,
   kind: "file" | "directory",
   mimeType?: string,
+  resolver: typeof completeIconResolver = completeIconResolver,
 ): PierreIconResolution | null {
   if (kind === "directory") return null;
-  const icon = completeIconResolver.resolveIcon("file-tree-icon-file", pathValue);
+  const icon = resolver.resolveIcon("file-tree-icon-file", pathValue);
   if (icon?.name === "file-tree-builtin-image" && icon.token === undefined)
     return { ...icon, token: "image" };
   return icon?.token === "default" && mimeType
-    ? completeIconResolver.resolveIcon(
-        "file-tree-icon-file",
-        fileIconPathForMimeType(pathValue, mimeType),
-      )
+    ? resolver.resolveIcon("file-tree-icon-file", fileIconPathForMimeType(pathValue, mimeType))
     : icon;
 }
 

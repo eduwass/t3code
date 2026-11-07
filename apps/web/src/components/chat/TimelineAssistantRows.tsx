@@ -23,6 +23,7 @@ import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../times
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
+import { useFileTreeLook } from "../../fileTreeLook/fileTreeLook";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -340,7 +341,8 @@ function AssistantChangedFilesSectionInner({
     (store) => store.threadChangedFilesExpandedById[routeThreadKey]?.[turnSummary.runId],
   );
   const setExpanded = useUiStateStore((store) => store.setThreadChangedFilesExpanded);
-  const allDirectoriesExpanded = persistedExpanded ?? false;
+  const fileTreeLook = useFileTreeLook();
+  const allDirectoriesExpanded = persistedExpanded ?? fileTreeLook.inlineExpanded;
 
   const thread = useThreadShell(ctx.threadRef);
   const activeProject = useProject(

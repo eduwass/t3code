@@ -8,12 +8,19 @@ import { ChevronsDownUp, ChevronsUpDown, Folder, FolderClosed } from "lucide";
 import { cn } from "~/lib/utils";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { PierreEntryIcon } from "./PierreEntryIcon";
+import { MaterialEntryIcon } from "~/fileTreeLook/MaterialIcon";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { MorphIcon } from "~/components/MorphIcon";
 import { observeResize } from "~/lib/observeResize";
+import { useFileTreeLook } from "~/fileTreeLook/fileTreeLook";
 
+// File tree tuning sets these variables; unset, rows keep the code font at their own size.
+const rowTextStyle = (size: string) => ({
+  fontFamily: "var(--file-tree-font-family, var(--font-mono))",
+  fontSize: `var(--file-tree-font-size, var(${size}))`,
+});
 const EMPTY_DIRECTORY_OVERRIDES: Record<string, boolean> = {};
 const VIRTUALIZE_AFTER_ROWS = 250;
 const ROW_OVERSCAN = 8;
@@ -163,6 +170,7 @@ const ChangedFilesTree = memo(function ChangedFilesTree(props: {
     overrides: Record<string, boolean>;
   }>({ key: null, overrides: {} });
   const syncTimelineLayout = useSyncLayout();
+  const fileTreeLook = useFileTreeLook();
   const treeNodes = buildTurnDiffTree(files);
   const directoryPathsKey = collectDirectoryPaths(treeNodes).join("\u0000");
   const hasDirectoryNodes = directoryPathsKey.length > 0;
@@ -191,7 +199,7 @@ const ChangedFilesTree = memo(function ChangedFilesTree(props: {
   const virtualized = rows.length > VIRTUALIZE_AFTER_ROWS;
 
   const renderRow = ({ node, depth }: ChangedFileRow) => {
-    const leftPadding = 8 + depth * 14;
+    const leftPadding = `calc(8px + ${depth} * var(--file-tree-indent, 14px))`;
     if (node.kind === "directory") {
       const isExpanded = expandedDirectories[node.path] ?? allDirectoriesExpanded;
       return (
@@ -201,21 +209,33 @@ const ChangedFilesTree = memo(function ChangedFilesTree(props: {
           data-scroll-anchor-ignore
           aria-expanded={isExpanded}
           className="group flex h-7 w-full cursor-pointer items-center gap-2 rounded-md py-1.5 pr-2 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
-          style={{ paddingLeft: `${leftPadding}px` }}
+          style={{ paddingLeft: leftPadding }}
           onClick={() => toggleDirectory(node.path)}
         >
-          <ChevronRightIcon
-            aria-hidden="true"
-            className={cn(
-              "size-3.5 shrink-0 text-muted-foreground/70 transition-transform group-hover:text-foreground/80",
-              isExpanded && "rotate-90",
-            )}
-          />
-          <MorphIcon
-            className="size-3.5 shrink-0 text-muted-foreground/75"
-            icon={isExpanded ? Folder : FolderClosed}
-          />
-          <span className="truncate font-mono text-2xs text-muted-foreground/90 group-hover:text-foreground/90">
+          {fileTreeLook.folders === "icons" ? null : (
+            <ChevronRightIcon
+              aria-hidden="true"
+              className={cn(
+                "size-3.5 shrink-0 text-muted-foreground/70 transition-transform group-hover:text-foreground/80",
+                isExpanded && "rotate-90",
+              )}
+            />
+          )}
+          <MaterialEntryIcon
+            look={fileTreeLook}
+            path={node.path}
+            kind="directory"
+            open={isExpanded}
+          >
+            <MorphIcon
+              className="size-3.5 shrink-0 text-muted-foreground/75"
+              icon={isExpanded ? Folder : FolderClosed}
+            />
+          </MaterialEntryIcon>
+          <span
+            className="truncate text-muted-foreground/90 group-hover:text-foreground/90"
+            style={rowTextStyle("--text-2xs")}
+          >
             {node.name}
           </span>
           {hasNonZeroStat(node.stat) && (
@@ -232,7 +252,7 @@ const ChangedFilesTree = memo(function ChangedFilesTree(props: {
         key={`file:${node.path}`}
         type="button"
         className="group flex h-7 w-full cursor-pointer items-center gap-2 rounded-md py-1.5 pr-2 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
-        style={{ paddingLeft: `${leftPadding}px` }}
+        style={{ paddingLeft: leftPadding }}
         onClick={() => onOpenTurnDiff(runId, node.path)}
         onContextMenu={
           onFileContextMenu
@@ -243,16 +263,22 @@ const ChangedFilesTree = memo(function ChangedFilesTree(props: {
             : undefined
         }
       >
-        {hasDirectoryNodes || depth > 0 ? (
+        {(hasDirectoryNodes || depth > 0) && fileTreeLook.folders !== "icons" ? (
           <span aria-hidden="true" className="size-3.5 shrink-0" />
         ) : null}
-        <PierreEntryIcon
-          pathValue={node.path}
-          kind="file"
-          theme={resolvedTheme}
-          className="size-3.5 text-muted-foreground/70"
-        />
-        <span className="flex min-w-0 font-mono text-xs text-foreground/85 group-hover:text-foreground">
+        <MaterialEntryIcon look={fileTreeLook} path={node.path} kind="file">
+          <PierreEntryIcon
+            pathValue={node.path}
+            kind="file"
+            theme={resolvedTheme}
+            className="size-3.5 text-muted-foreground/70"
+            look={fileTreeLook}
+          />
+        </MaterialEntryIcon>
+        <span
+          className="flex min-w-0 text-foreground/85 group-hover:text-foreground"
+          style={rowTextStyle("--text-xs")}
+        >
           <MiddleTruncate value={node.name} />
         </span>
         {node.stat && (

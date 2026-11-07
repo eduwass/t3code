@@ -36,6 +36,7 @@ import { AdvancedSettings } from "./AdvancedSettings";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 import { TypographySection } from "./TypographySettings";
 import { CodeThemeSection } from "../../codeThemes/CodeThemeSettings";
+import { FileTreeLookSection } from "../../fileTreeLook/FileTreeLookSettings";
 import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
@@ -483,6 +484,7 @@ export function AppearanceSettingsPanel() {
 
       <TypographySection />
       <CodeThemeSection />
+      <FileTreeLookSection />
     </SettingsPageContainer>
   );
 }
