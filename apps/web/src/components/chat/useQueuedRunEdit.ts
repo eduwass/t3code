@@ -2,7 +2,7 @@ import { msg } from "gt-react";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
-import { paperFrameRecords } from "../paper/paperFrameReferences";
+import { paperFrameRecords } from "@t3tools/client-runtime/work-log/paper-frame-references";
 import {
   makeQueuedRunEditStore,
   makeQueuedRunsAtom,

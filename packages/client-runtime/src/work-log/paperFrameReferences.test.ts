@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { paperFrameMentionMarkdown, withPaperFrameRecords } from "./paperFrameReferences";
+import { paperFrameMentionMarkdown, withPaperFrameRecords } from "./paperFrameReferences.ts";
 
 const mention = (nodeId: string, name: string) =>
   paperFrameMentionMarkdown({ fileId: "01M50M7KR7", nodeId, name, shot: null, inThread: false })!;

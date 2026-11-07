@@ -1,4 +1,5 @@
 import { installPermissionUpdateNotice } from "./features/connection/permissionUpdateNotice";
+import { PaperFrameViewerHost } from "./features/paper/PaperFrameViewer";
 import { installComposerAttachmentUploads } from "./state/composer-attachment-uploads";
 import { installThreadOutboxDelivery } from "./state/threadOutboxDelivery";
 import * as Linking from "expo-linking";
@@ -319,6 +320,7 @@ function AppContent() {
                 />
                 <Dialog.Host />
                 <ThreadArrangementHost />
+                <PaperFrameViewerHost />
                 <ProjectChipIconRasterizer />
               </NativeLayoutMetricsProvider>
             </GlobalVoiceInputControl>

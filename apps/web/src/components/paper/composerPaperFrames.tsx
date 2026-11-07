@@ -23,9 +23,9 @@ import {
   parseContextId,
   type PaperFrameMention,
   type PaperFrameMenuItem,
-} from "./paperFrameReferences";
+} from "@t3tools/client-runtime/work-log/paper-frame-references";
 
-export { PAPER_FRAME_CONTEXT_KIND } from "./paperFrameReferences";
+export { PAPER_FRAME_CONTEXT_KIND } from "@t3tools/client-runtime/work-log/paper-frame-references";
 
 const MAX_MENU_ITEMS = 8;
 
