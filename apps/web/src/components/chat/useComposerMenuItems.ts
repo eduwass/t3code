@@ -43,6 +43,7 @@ import {
   rankPullRequestMatches,
 } from "../pullRequest/pullRequestList.logic";
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
+import { usePaperFrameMenuItems } from "../paper/composerPaperFrames";
 import {
   searchSlashCommandItems,
   slashCommandItemsForPromptPosition,
@@ -186,6 +187,11 @@ export function useComposerMenuItems({
       ? []
       : composerPullRequestsFromLinks(threadPullRequests ?? [], pullRequestProjectId);
 
+  const paperFrameItems = usePaperFrameMenuItems({
+    environmentId,
+    threadId: activeThreadId,
+    query: composerTrigger?.kind === "path" ? composerTrigger.query : null,
+  });
   const items = ((): ComposerCommandItem[] => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -206,6 +212,7 @@ export function useComposerMenuItems({
               query: composerTrigger.query,
             })
           : []),
+        ...paperFrameItems,
         ...workspaceEntries.entries.map((entry) => ({
           id: `path:${entry.kind}:${entry.path}`,
           type: "path" as const,
