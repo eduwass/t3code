@@ -31,6 +31,9 @@ on that side. When there is no area on that side, the key keeps its usual job, s
 `Command+Down` in an empty message input still scrolls to the end. In a browser panel's
 page, only `Command+Left` and `Command+Right` move; Up and Down scroll the page.
 
+In the right panel, `Ctrl+Tab` and `Ctrl+Shift+Tab` switch to the next and previous tab,
+`Command+W` closes the active tab and `Command+T` adds one.
+
 ## Browse threads
 
 Tab moves through each thread and its buttons. Up and Down also move between threads
