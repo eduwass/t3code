@@ -1310,6 +1310,10 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.paperRequest,
       staleTimeMs: 5 * 60_000,
     }),
+    paperAccount: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:paper:account",
+      tag: WS_METHODS.paperAccount,
+    }),
     processDiagnostics: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:process-diagnostics",
       tag: WS_METHODS.serverGetProcessDiagnostics,

@@ -1,5 +1,7 @@
 // T3 Space fork: the switches for everything Paper.
+import { PaperConnectionsGroup } from "./PaperConnectionsGroup";
 import { ScopedSwitch } from "./ScopedSwitch";
+import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
@@ -7,6 +9,7 @@ import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings"
 export function PaperIntegrationRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
+  const environmentId = useSettingsScope().target?.environmentId ?? null;
   return (
     <>
       <SettingsRow
@@ -25,12 +28,17 @@ export function PaperIntegrationRow() {
           />
         }
       />
+      {settings.paperIntegrationEnabled && environmentId !== null ? (
+        <div className="px-4 py-3 sm:px-5">
+          <PaperConnectionsGroup environmentId={environmentId} />
+        </div>
+      ) : null}
       {settings.paperIntegrationEnabled ? (
         <SettingsRow
           serverScoped
           {...searchableSetting("paper-live-frames")}
           settingKeys={["paperLiveFramesEnabled"]}
-          description="Open thumbnails as the real frame, rendered as HTML, so it stays sharp at any zoom. Needs Paper Desktop on this machine or T3_PAPER_MCP_COMMAND. Right-click a thumbnail to try one."
+          description="Open thumbnails as the real frame, rendered as HTML, so it stays sharp at any zoom. Uses whichever Paper connection is in use. Right-click a thumbnail to try one."
           control={
             <ScopedSwitch
               settingKeys={["paperLiveFramesEnabled"]}
