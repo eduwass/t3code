@@ -20,7 +20,9 @@ import { ENVIRONMENT_MACHINE_SYMBOLS } from "../../components/EnvironmentMachine
 import { GlassSurface } from "../../components/ui/GlassSurface";
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
 import { pullRequestStatus } from "../pull-requests/pullRequestStatus";
+import { PaperFrameRowThumb, type MobilePaperFrameMenuItem } from "../paper/composerPaperFrames";
 export type ComposerCommandItem =
+  | MobilePaperFrameMenuItem
   | {
       readonly id: string;
       readonly type: "pull-request";
@@ -123,6 +125,8 @@ function itemIcon(item: ComposerCommandItem): AppSymbolName | null {
       return "text.bubble";
     case "environment":
       return ENVIRONMENT_MACHINE_SYMBOLS[item.machine];
+    case "paper-frame":
+      return null;
   }
 }
 
@@ -176,6 +180,8 @@ const CommandRow = memo(function CommandRow(props: {
     >
       {props.item.type === "path" ? (
         <PierreEntryIcon path={props.item.path} kind={props.item.kind} size={16} />
+      ) : props.item.type === "paper-frame" ? (
+        <PaperFrameRowThumb item={props.item} />
       ) : iconName ? (
         <SymbolView
           name={iconName}
