@@ -340,7 +340,7 @@ function AssistantChangedFilesSectionInner({
     (store) => store.threadChangedFilesExpandedById[routeThreadKey]?.[turnSummary.runId],
   );
   const setExpanded = useUiStateStore((store) => store.setThreadChangedFilesExpanded);
-  const allDirectoriesExpanded = persistedExpanded ?? false;
+  const allDirectoriesExpanded = persistedExpanded ?? true;
 
   const thread = useThreadShell(ctx.threadRef);
   const activeProject = useProject(
