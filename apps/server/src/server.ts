@@ -123,6 +123,7 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as ManagedLimits from "./policy/managedLimits.ts";
 import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
+import * as PaperService from "./paper/PaperService.ts";
 import * as NativeAppIconResolver from "./assets/NativeAppIconResolver.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
 import * as ProviderInstallation from "./provider/providerInstallation.ts";
@@ -820,6 +821,7 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   ),
   Layer.provideMerge(layerWorkspace),
   Layer.provideMerge(ProjectEnrichmentService.layer),
+  Layer.provideMerge(PaperService.layer),
   Layer.provideMerge(Layer.mergeAll(NativeAppIconResolver.layer, layerProjectFaviconResolver)),
   Layer.provideMerge(layerRepositoryIdentityResolver),
   Layer.provideMerge(CodexManagedTokenBroker.layer),
