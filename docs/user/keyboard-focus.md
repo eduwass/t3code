@@ -10,6 +10,8 @@ In a web browser, plain `F6` may focus the browser toolbar. Use `mod+F6` and `mo
 
 On macOS, `Command+Arrow` moves by direction instead: it jumps to the nearest visible area on that side. When there is no area on that side, the key keeps its usual job, so `Command+Down` in an empty composer still scrolls to the end. In a browser panel's page, only `Command+Left` and `Command+Right` move; Up and Down scroll the page.
 
+In the right panel, `Ctrl+Tab` and `Ctrl+Shift+Tab` switch to the next and previous tab, `Command+W` closes the active tab and `Command+T` adds one.
+
 ## Browse threads and settings
 
 - `Tab`: Moves through each thread row and its actions.
