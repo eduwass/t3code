@@ -6,6 +6,7 @@ import {
   OrchestrationV2SearchThreadsResult,
 } from "./orchestrationV2.ts";
 import { OrchestrationDispatchCommandError } from "./orchestrationDispatch.ts";
+import { PaperRequest, PaperResponse, PaperUnavailableError } from "./paper.ts";
 import {
   McpAppCallToolInput,
   McpAppCallToolResult,
@@ -549,6 +550,7 @@ export const WS_METHODS = {
   serverProbe: "server.probe",
   serverGetConfig: "server.getConfig",
   serverGetNpmRelease: "server.getNpmRelease",
+  paperRequest: "paper.request",
   serverRefreshProviders: "server.refreshProviders",
   serverUpdateProvider: "server.updateProvider",
   serverUpdateServer: "server.updateServer",
@@ -853,6 +855,13 @@ const WsProviderInstallRemoveRpc = Rpc.make(WS_METHODS.providerInstallRemove, {
   payload: ProviderSetupInput,
   success: ProviderInstallState,
   error: ProviderSetupRpcError,
+});
+
+// T3 Space fork.
+const WsPaperRequestRpc = Rpc.make(WS_METHODS.paperRequest, {
+  payload: PaperRequest,
+  success: PaperResponse,
+  error: Schema.Union([PaperUnavailableError, EnvironmentAuthorizationError]),
 });
 
 const WsServerGetNpmReleaseRpc = Rpc.make(WS_METHODS.serverGetNpmRelease, {
@@ -2356,6 +2365,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProviderInstallRemoveRpc,
   WsServerUpdateServerRpc,
   WsServerGetNpmReleaseRpc,
+  WsPaperRequestRpc,
   WsServerUpdateServerWithProgressRpc,
   WsServerCommitDesktopUpdateRpc,
   WsServerUpsertKeybindingRpc,
