@@ -589,6 +589,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("beta tab autocomplete predict next message claude codex ghost text")],
   },
   {
+    id: "paper-integration",
+    title: "Paper integration (T3 Space)",
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: ["beta paper design mockup artboard frame thumbnails canvas"],
+  },
+  {
     id: "simlock-hosts",
     title: msg("Simlock device hosts (alpha)"),
     to: "/settings/labs",
