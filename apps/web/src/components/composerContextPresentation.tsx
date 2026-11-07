@@ -1,4 +1,5 @@
 import ChatMarkdown from "./ChatMarkdown";
+import { PAPER_FRAME_CONTEXT_KIND, PaperFrameContextChip } from "./paper/composerPaperFrames";
 import { isSvgAttachment } from "@t3tools/shared/image";
 import { ReadOnlySourcePreview } from "./files/AttachmentFilePreview";
 import type {
@@ -489,6 +490,7 @@ export function ComposerContextReferenceChip(props: {
   contextId: string;
   label: string;
 }): ReactElement {
+  if (props.kind === PAPER_FRAME_CONTEXT_KIND) return <PaperFrameContextChip {...props} />;
   const records = use(ComposerContextRecordsContext);
   return composerContextPresentationRegistry.render(props.kind, records.get(props.contextId), {
     label: props.label,

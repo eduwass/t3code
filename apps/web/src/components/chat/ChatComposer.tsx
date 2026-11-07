@@ -1,4 +1,5 @@
 import { VoiceInputSetup } from "./VoiceInputSetup";
+import { paperFrameMentionMarkdown } from "../paper/paperFrameReferences";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
@@ -2012,6 +2013,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (applied) {
         setComposerHighlightedItemId(null);
       }
+      return;
+    }
+    if (item.type === "paper-frame") {
+      const reference = trigger.kind === "path" ? paperFrameMentionMarkdown(item.frame) : null;
+      if (reference === null) return;
+      const replacement = `${reference} `;
+      const applied = applyPromptReplacement(
+        trigger.rangeStart,
+        extendReplacementRangeForTrailingSpace(snapshot.value, trigger.rangeEnd, replacement),
+        replacement,
+      );
+      if (applied) setComposerHighlightedItemId(null);
       return;
     }
     if (item.type === "environment") {

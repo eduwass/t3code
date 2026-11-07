@@ -47,6 +47,7 @@ import type { ComposerCommandItem } from "./ComposerCommandMenu";
 import { matchComposerModelItems } from "./composerModelMentions";
 import type { ModelEsque } from "./providerIconUtils";
 import type { ProviderInstanceEntry } from "../../providerInstances";
+import { usePaperFrameMenuItems } from "../paper/composerPaperFrames";
 import {
   searchSlashCommandItems,
   slashCommandItemsForPromptPosition,
@@ -193,6 +194,11 @@ export function useComposerMenuItems({
       ? []
       : composerPullRequestsFromLinks(threadPullRequests ?? [], pullRequestProjectId);
 
+  const paperFrameItems = usePaperFrameMenuItems({
+    environmentId,
+    threadId: activeThreadId,
+    query: composerTrigger?.kind === "path" ? composerTrigger.query : null,
+  });
   const items = ((): ComposerCommandItem[] => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -218,6 +224,7 @@ export function useComposerMenuItems({
           modelOptionsByInstance: modelMentions.modelOptionsByInstance,
           query: composerTrigger.query,
         }),
+        ...paperFrameItems,
         ...workspaceEntries.entries.map((entry) => ({
           id: `path:${entry.kind}:${entry.path}`,
           type: "path" as const,
