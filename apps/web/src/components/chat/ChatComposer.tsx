@@ -279,6 +279,7 @@ import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { Kbd } from "../ui/kbd";
 import { useSoftwareKeyboardOpen } from "../../hooks/useSoftwareKeyboardOpen";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { useChatCanvas } from "./ChatCanvasContext";
 import { usePanelAnimationSettings } from "../../panelAnimations";
 import { readEnvironmentScope, readPreparedConnection } from "../../state/session";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
@@ -2567,12 +2568,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ? promptSuggestion
       : null;
 
+  const timelineScrollNode = useChatCanvas()?.timeline ?? null;
   const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem?: boolean) => {
     if (key === "Escape" && composerSendHeld && !event.isComposing) {
       cancelHeldSend();
       return true;
     }
     return composerCommandKeyHandler({
+      timelineScrollNode,
       keybindings,
       getShortcutContext,
       sendShortcut: settings.sendShortcut,

@@ -33,13 +33,18 @@ import {
   listOutdentForTab,
 } from "../../composer-list-continuation";
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import { glideTimelineWhileHeld } from "./timelineArrowGlide.logic";
+
+const TIMELINE_ARROW_SCROLL_PX = 80;
 
 /**
  * The composer's key handling inside the editor: send shortcuts, the slash/mention menu,
- * prompt history on ArrowUp/ArrowDown, plan-mode toggle, prompt suggestions on Tab, and list continuation.
+ * timeline scrolling on ArrowUp/ArrowDown and prompt history on Shift+ArrowUp/ArrowDown,
+ * plan-mode toggle, prompt suggestions on Tab, and list continuation.
  * Returns the editor's key handler; it reads the inputs captured by the render that built it.
  */
 export function composerCommandKeyHandler(input: {
+  readonly timelineScrollNode: HTMLElement | null;
   readonly keybindings: ChatComposerProps["keybindings"];
   readonly getShortcutContext: ChatComposerProps["getShortcutContext"];
   readonly sendShortcut: ChatComposerProps["settings"]["sendShortcut"];
@@ -101,6 +106,7 @@ export function composerCommandKeyHandler(input: {
   readonly dismissPromptSuggestion: () => void;
 }) {
   const {
+    timelineScrollNode,
     keybindings,
     getShortcutContext,
     sendShortcut,
@@ -162,7 +168,7 @@ export function composerCommandKeyHandler(input: {
     direction: "backward" | "forward",
     event: KeyboardEvent,
   ): boolean => {
-    if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.isComposing) {
+    if (!event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.isComposing) {
       return false;
     }
     if (pendingUserInputs.length > 0) return false;
@@ -198,6 +204,45 @@ export function composerCommandKeyHandler(input: {
       ? { targetKey: promptHistoryTargetKey, position: step.position }
       : null;
     replacePromptFromHistory(step.prompt, step.mentions);
+    return true;
+  };
+
+  // An empty composer has no lines to move between, so its arrow keys scroll the timeline,
+  // and mod+arrow (Cmd on macOS, Ctrl elsewhere) jumps to its start or end.
+  const scrollTimeline = (direction: "backward" | "forward", event: KeyboardEvent): boolean => {
+    const toEdge = event.metaKey !== event.ctrlKey;
+    if (event.shiftKey || event.altKey || (event.metaKey && event.ctrlKey) || event.isComposing) {
+      return false;
+    }
+    if (!timelineScrollNode || pendingUserInputs.length > 0 || promptRef.current.length > 0) {
+      return false;
+    }
+    if (toEdge) {
+      // Instant: a smooth scroll across a long virtualized timeline renders every row on the way.
+      timelineScrollNode.scrollTo({
+        top: direction === "backward" ? 0 : timelineScrollNode.scrollHeight,
+        behavior: "instant",
+      });
+      return true;
+    }
+    if (event.repeat) {
+      // Held: glide per frame instead of jumping per repeat, which stutters at any repeat rate.
+      const view = timelineScrollNode.ownerDocument.defaultView;
+      if (view) {
+        glideTimelineWhileHeld(
+          timelineScrollNode,
+          view,
+          event.key,
+          direction === "backward" ? -1 : 1,
+          event.timeStamp,
+        );
+      }
+      return true;
+    }
+    timelineScrollNode.scrollBy({
+      top: direction === "backward" ? -TIMELINE_ARROW_SCROLL_PX : TIMELINE_ARROW_SCROLL_PX,
+      behavior: "smooth",
+    });
     return true;
   };
 
@@ -282,7 +327,8 @@ export function composerCommandKeyHandler(input: {
       return applyPromptReplacement(0, 0, acceptedSuggestion);
     }
     if ((key === "ArrowUp" || key === "ArrowDown") && submissionIntent === null) {
-      return navigatePromptHistory(key === "ArrowUp" ? "backward" : "forward", event);
+      const direction = key === "ArrowUp" ? "backward" : "forward";
+      return navigatePromptHistory(direction, event) || scrollTimeline(direction, event);
     }
     if (submissionIntent) {
       submitComposer(

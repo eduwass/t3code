@@ -16,6 +16,8 @@ export const ChatCanvasContext = createContext<{
   layout: ReturnType<typeof resolveChatCanvasLayout>;
   previewKey: string | null;
   registerTimeline: (element: HTMLElement | null) => void;
+  /** The timeline's scroll node, so the composer can scroll it with the arrow keys. */
+  timeline: HTMLElement | null;
   measureDetailsCard: (measurement: DetailsCardMeasurement) => void;
   detailsCardTopInset: number;
   /** Where an inline card sits when nothing overlaps it; null when the canvas is too narrow. */
