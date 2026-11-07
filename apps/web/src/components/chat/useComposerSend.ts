@@ -1,4 +1,5 @@
 import { isClearComposerCommand, parseSideChatCommand } from "@t3tools/shared/composerTrigger";
+import { withPaperFrameRecords } from "../paper/paperFrameReferences";
 import { armFreshSession, disarmFreshSession, readFreshSessionArm } from "./freshSessionArms";
 import {
   mergeDirectPreviewAnnotation,
@@ -771,13 +772,16 @@ export function useComposerSend(input: ComposerSendInput) {
       composerRef.current?.resetCursorState();
       const followUpSent = await submitPlanFollowUp({
         text: followUp.text,
-        context: buildMessageContext({
-          terminalContexts: sendableComposerTerminalContexts,
-          reviewComments: composerReviewComments,
-          previewAnnotations: composerPreviewAnnotations,
-          threadContexts: composerThreadContexts,
-          environmentContexts: composerEnvironmentContexts,
-        }),
+        context: withPaperFrameRecords(
+          buildMessageContext({
+            terminalContexts: sendableComposerTerminalContexts,
+            reviewComments: composerReviewComments,
+            previewAnnotations: composerPreviewAnnotations,
+            threadContexts: composerThreadContexts,
+            environmentContexts: composerEnvironmentContexts,
+          }),
+          followUp.text,
+        ),
         interactionMode: followUp.interactionMode,
       });
       if (!followUpSent) {
@@ -906,6 +910,8 @@ export function useComposerSend(input: ComposerSendInput) {
     // row, the upload id (or local id on the data-URL path) on the wire; the server
     // rebinds them to the persisted id.
     const buildOutgoingMessageContext = (attachmentIds: ReadonlyArray<string>) =>
+      withPaperFrameRecords(buildMessageContextForSend(attachmentIds), messageTextForSend);
+    const buildMessageContextForSend = (attachmentIds: ReadonlyArray<string>) =>
       buildMessageContext({
         terminalContexts: composerTerminalContextsSnapshot,
         reviewComments: composerReviewCommentsSnapshot,
