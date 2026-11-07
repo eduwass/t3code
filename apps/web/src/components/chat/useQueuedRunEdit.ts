@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { paperFrameRecords } from "../paper/paperFrameReferences";
+import { paperFrameRecords } from "@t3tools/client-runtime/work-log/paper-frame-references";
 import {
   makeQueuedRunEditStore,
   makeQueuedRunsAtom,
