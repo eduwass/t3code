@@ -1,6 +1,7 @@
 // T3 Space fork: full-screen Paper frames on the phone (board 03). Swipe between
 // frames, pinch or double-tap to zoom, drag to pan, and jump with the strip.
 // Paper itself does not run on phones, so this is how a design gets looked at.
+// With live frames on, the page on screen swaps to the frame as HTML once it loads.
 import { useAtomValue } from "@effect/atom-react";
 import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
 import { Image } from "expo-image";
@@ -29,6 +30,7 @@ import { useAssetUrlState } from "../../state/assets";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { closePaperViewer, paperViewerAtom, type PaperViewerFrame } from "./paperFrameViewerState";
+import { PaperLiveFrame } from "./PaperLiveFrame";
 
 const MAX_SCALE = 6;
 const STRIP_HEIGHT = 64;
@@ -141,20 +143,39 @@ function FramePage(props: {
   readonly frame: PaperViewerFrame;
   readonly width: number;
   readonly height: number;
+  readonly live: boolean;
   readonly onZoomedChange: (zoomed: boolean) => void;
+  readonly onSwipe: (direction: 1 | -1) => void;
 }) {
   const uri = useFrameImageUrl(props.environmentId, props.frame);
+  const [liveReady, setLiveReady] = useState(false);
+  const showLive = props.live && liveReady;
   return (
     <View
       style={{ width: props.width, height: props.height }}
       className="items-center justify-center overflow-hidden"
     >
-      <ZoomableFrame
-        uri={uri}
-        width={props.width}
-        height={props.height}
-        onZoomedChange={props.onZoomedChange}
-      />
+      {showLive ? null : (
+        <ZoomableFrame
+          uri={uri}
+          width={props.width}
+          height={props.height}
+          onZoomedChange={props.onZoomedChange}
+        />
+      )}
+      {props.live ? (
+        <PaperLiveFrame
+          environmentId={props.environmentId}
+          frame={props.frame}
+          visible={showLive}
+          onReady={() => {
+            setLiveReady(true);
+            props.onZoomedChange(false);
+          }}
+          onZoomedChange={props.onZoomedChange}
+          onSwipe={props.onSwipe}
+        />
+      ) : null}
     </View>
   );
 }
@@ -200,6 +221,8 @@ function PaperFrameViewer(props: {
   const [index, setIndex] = useState(props.index);
   const [zoomed, setZoomed] = useState(false);
   const [list, setList] = useState<FlatList<PaperViewerFrame> | null>(null);
+  const settings = useAtomValue(serverEnvironment.settingsValueAtom(props.environmentId));
+  const liveEnabled = settings?.paperLiveFramesEnabled === true;
   const pageHeight = window.height - insets.top - insets.bottom - 56 - STRIP_HEIGHT;
   const current = props.frames[index];
   const goTo = (next: number) => {
@@ -240,12 +263,19 @@ function PaperFrameViewer(props: {
           onMomentumScrollEnd={(event) =>
             setIndex(Math.round(event.nativeEvent.contentOffset.x / window.width))
           }
-          renderItem={({ item }) => (
+          extraData={index}
+          renderItem={({ item, index: position }) => (
             <FramePage
               environmentId={props.environmentId}
               frame={item}
               width={window.width}
               height={pageHeight}
+              // Only the page on screen goes live; each live frame costs Paper calls.
+              live={liveEnabled && position === index}
+              onSwipe={(direction) => {
+                const next = position + direction;
+                if (next >= 0 && next < props.frames.length) goTo(next);
+              }}
               onZoomedChange={setZoomed}
             />
           )}
@@ -269,7 +299,7 @@ function PaperFrameViewer(props: {
             </ScrollView>
           ) : (
             <Text className="text-center text-xs text-muted-foreground">
-              Pinch or double-tap to zoom
+              {liveEnabled ? "Pinch to zoom · live frame" : "Pinch or double-tap to zoom"}
             </Text>
           )}
         </View>
