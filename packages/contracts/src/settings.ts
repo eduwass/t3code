@@ -52,6 +52,7 @@ import {
   ProviderDriverKind,
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
+import { DEFAULT_PAPER_CONNECTIONS, PaperConnectionSetting } from "./paper.ts";
 import {
   CloudSpeechModelId,
   SpeechAcceleration,
@@ -1448,6 +1449,9 @@ export const ServerSettings = Schema.Struct({
   // T3 Space fork: Paper thumbnails in threads. Off by default.
   paperIntegrationEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   paperLiveFramesEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  paperConnections: Schema.Array(PaperConnectionSetting).pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PAPER_CONNECTIONS)),
+  ),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1868,6 +1872,7 @@ export const ServerSettingsPatch = Schema.Struct({
   promptSuggestionsEnabled: Schema.optionalKey(Schema.Boolean),
   paperIntegrationEnabled: Schema.optionalKey(Schema.Boolean),
   paperLiveFramesEnabled: Schema.optionalKey(Schema.Boolean),
+  paperConnections: Schema.optionalKey(Schema.Array(PaperConnectionSetting)),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),
