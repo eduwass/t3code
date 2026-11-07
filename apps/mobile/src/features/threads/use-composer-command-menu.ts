@@ -66,6 +66,8 @@ import {
 } from "../../state/queries";
 import type { ModelOption } from "../../lib/modelOptions";
 import type { ComposerCommandItem } from "./ComposerCommandPopover";
+import { usePaperFrameMenuItems } from "../paper/composerPaperFrames";
+import { paperFrameMentionRecord } from "@t3tools/client-runtime/work-log/paper-frame-references";
 import { matchesSlashSkillQuery } from "./composerSlashSkillSearch";
 
 const providerWorkspaceSnapshotRefresh = createProviderWorkspaceSnapshotRefreshAtomFamily({
@@ -359,6 +361,10 @@ export function useComposerCommandMenu({
     query: trigger?.kind === "pull-request" ? trigger.query : null,
   });
 
+  const paperFrameItems = usePaperFrameMenuItems({
+    environmentId,
+    query: trigger?.kind === "path" ? trigger.query : null,
+  });
   const items = ((): ComposerCommandItem[] => {
     if (!trigger) return [];
 
@@ -524,6 +530,7 @@ export function useComposerCommandMenu({
         ...threadItems,
         ...environmentItems,
         ...modelItems,
+        ...paperFrameItems,
         ...pathSearch.entries.map((entry) => {
           const parts = entry.path.split("/");
           return {
@@ -569,15 +576,21 @@ export function useComposerCommandMenu({
       setSelection({ start: result.cursor, end: result.cursor });
       return;
     }
-    if (item.type === "thread") {
+    if (item.type === "thread" || item.type === "paper-frame") {
       if (!ownerKey || trigger.kind !== "path") return;
-      const shell = threadShells.find(
-        (candidate) =>
-          candidate.environmentId === item.thread.environmentId &&
-          candidate.id === item.thread.threadId,
-      );
-      if (!shell) return;
-      const record = threadContextRecord(item.thread, shell.title);
+      const shell =
+        item.type === "thread"
+          ? threadShells.find(
+              (candidate) =>
+                candidate.environmentId === item.thread.environmentId &&
+                candidate.id === item.thread.threadId,
+            )
+          : undefined;
+      const record =
+        item.type === "paper-frame"
+          ? paperFrameMentionRecord(item.frame)
+          : shell && threadContextRecord(item.thread, shell.title);
+      if (!record) return;
       const existing = getComposerDraftSnapshot(ownerKey).context?.records ?? [];
       const alreadyAttached = existing.some((entry) => entry.contextId === record.contextId);
       if (!alreadyAttached && existing.length >= COMPOSER_CONTEXT_MAX_RECORDS) {

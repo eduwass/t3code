@@ -12,6 +12,7 @@ vi.mock("../../state/use-composer-drafts", () => ({
   setComposerDraftContext: vi.fn(),
   useComposerDraftSelection: vi.fn(),
 }));
+vi.mock("../paper/composerPaperFrames", () => ({ usePaperFrameMenuItems: () => [] }));
 vi.mock("../../lib/uuid", () => ({ uuidv4: () => "context-id" }));
 vi.mock("../../state/server", () => ({
   serverEnvironment: {
