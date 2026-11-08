@@ -1362,6 +1362,10 @@ export const ServerSettings = Schema.Struct({
   // T3 Space fork: Paper thumbnails in threads. Off by default.
   paperIntegrationEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   paperLiveFramesEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  paperWorkingIndicatorEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  paperLiveUpdatesEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   paperConnections: Schema.Array(PaperConnectionSetting).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PAPER_CONNECTIONS)),
   ),
@@ -1762,6 +1766,8 @@ export const ServerSettingsPatch = Schema.Struct({
   linkedEnvironmentsEnabled: Schema.optionalKey(Schema.Boolean),
   paperIntegrationEnabled: Schema.optionalKey(Schema.Boolean),
   paperLiveFramesEnabled: Schema.optionalKey(Schema.Boolean),
+  paperWorkingIndicatorEnabled: Schema.optionalKey(Schema.Boolean),
+  paperLiveUpdatesEnabled: Schema.optionalKey(Schema.Boolean),
   paperConnections: Schema.optionalKey(Schema.Array(PaperConnectionSetting)),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({

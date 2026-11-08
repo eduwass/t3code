@@ -51,6 +51,42 @@ export function PaperIntegrationRow() {
           }
         />
       ) : null}
+      {settings.paperIntegrationEnabled ? (
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("paper-working-indicator")}
+          settingKeys={["paperWorkingIndicatorEnabled"]}
+          description="While an agent is drawing in Paper, show Paper's blue rain on its tool row and on the frame it is drawing."
+          control={
+            <ScopedSwitch
+              settingKeys={["paperWorkingIndicatorEnabled"]}
+              checked={settings.paperWorkingIndicatorEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ paperWorkingIndicatorEnabled: Boolean(checked) })
+              }
+              aria-label="Paper working indicator"
+            />
+          }
+        />
+      ) : null}
+      {settings.paperIntegrationEnabled && settings.paperLiveFramesEnabled ? (
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("paper-live-updates")}
+          settingKeys={["paperLiveUpdatesEnabled"]}
+          description="Redraw an open live frame after each change the agent makes in Paper, instead of waiting for its next screenshot."
+          control={
+            <ScopedSwitch
+              settingKeys={["paperLiveUpdatesEnabled"]}
+              checked={settings.paperLiveUpdatesEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ paperLiveUpdatesEnabled: Boolean(checked) })
+              }
+              aria-label="Follow Paper edits live"
+            />
+          }
+        />
+      ) : null}
     </>
   );
 }

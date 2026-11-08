@@ -2,10 +2,11 @@
 // on the tool-call group so they stay visible while the calls are folded.
 import {
   paperShotsFromProjectedItems,
+  type PaperActivity,
   type PaperShot,
 } from "@t3tools/client-runtime/work-log/paper-tools";
 import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
-import { use, useState } from "react";
+import { type ReactNode, use, useState } from "react";
 
 import type { EnvironmentId } from "@t3tools/contracts";
 
@@ -15,17 +16,44 @@ import { useEnvironmentQuery } from "~/state/query";
 import { ChatMarkdownAssetImage } from "../chat/ChatMarkdownMedia";
 import { type TimelineRow, TimelineRowCtx } from "../chat/timelineRowContext";
 import { PaperFrameViewer, usePaperLiveFrame } from "./PaperFrameViewer";
-import { PaperThreadShotsCtx } from "./paperThreadShots";
+import { PaperRain } from "./PaperRain";
+import {
+  PaperThreadActivityCtx,
+  PaperThreadShotsCtx,
+  PaperViewerOpenCtx,
+  type PaperViewerTarget,
+  usePaperDrawing,
+  usePaperDrawingKey,
+  usePaperThumbnail,
+} from "./paperThreadShots";
 
 export function PaperRowShots({ row }: { row: TimelineRow }) {
   // An expanded group renders its header row and its content row; show the shots once.
   if (row.kind === "work-toggle" || row.kind === "turn-fold") {
     return <PaperShotsStrip shots={row.paperShots} />;
   }
+  // One shape for live and finished rows, so a viewer opened mid-turn stays open when it ends.
   if (row.kind === "work-live" || (row.kind === "work" && !row.isExpandedToolGroup)) {
-    return <PaperShotsForEntries entries={row.groupedEntries} />;
+    return (
+      <>
+        {row.kind === "work-live" ? <PaperDrawingLine /> : null}
+        <PaperShotsForEntries entries={row.groupedEntries} />
+      </>
+    );
   }
   return null;
+}
+
+/** On the running turn's tool row while the agent holds an artboard in Paper. */
+function PaperDrawingLine() {
+  const drawing = usePaperDrawing(use(TimelineRowCtx).activeThreadEnvironmentId);
+  if (!drawing) return null;
+  return (
+    <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+      <PaperRain />
+      <span>Drawing in Paper</span>
+    </div>
+  );
 }
 
 function PaperShotsForEntries({
@@ -44,8 +72,10 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
     enabled: settings.paperIntegrationEnabled,
     liveEnabled: settings.paperLiveFramesEnabled,
   }));
-  const threadShots = use(PaperThreadShotsCtx);
-  const [viewing, setViewing] = useState<{ key: string; live: boolean } | null>(null);
+  const drawingKey = usePaperDrawingKey(environmentId);
+  const openViewer = use(PaperViewerOpenCtx);
+  const setViewing = (target: { key: string; live: boolean }) =>
+    openViewer({ ...target, shots: shots ?? [] });
   const visible = enabled && shots !== undefined && shots.length > 0;
   // Names need the server to reach Paper; without it the strip still works, unnamed.
   const names = useEnvironmentQuery(
@@ -71,19 +101,23 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
       {shots.map((shot) => (
         <figure
           key={shot.key}
-          className="flex shrink-0 flex-col gap-1"
+          className="relative flex shrink-0 flex-col gap-1"
           onContextMenu={(event) => {
             event.preventDefault();
             setViewing({ key: shot.key, live: true });
           }}
         >
           {liveEnabled ? <PaperLivePrefetch environmentId={environmentId} shot={shot} /> : null}
-          <ChatMarkdownAssetImage
+          {shot.key === drawingKey ? (
+            <span className="pointer-events-none absolute top-1.5 right-1.5 z-10 flex rounded-md bg-black/75 px-1.5 py-1">
+              <PaperRain />
+            </span>
+          ) : null}
+          <ShotImage
             environmentId={environmentId}
-            resource={shot.image}
+            shot={shot}
             alt={nameOf(shot) ?? `Paper frame ${shot.nodeId}`}
-            style={SHOT_IMAGE_STYLE}
-            onImageExpand={() => setViewing({ key: shot.key, live: liveEnabled })}
+            onExpand={() => setViewing({ key: shot.key, live: liveEnabled })}
           />
           <figcaption className="min-w-0 text-xs" style={CAPTION_STYLE}>
             <a
@@ -99,17 +133,55 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
           </figcaption>
         </figure>
       ))}
-      {viewing !== null ? (
-        <PaperFrameViewer
-          environmentId={environmentId}
-          // The thread's frames, unless this strip has frames the thread list has not caught up on.
-          shots={threadShots.some((shot) => shot.key === viewing.key) ? threadShots : shots}
-          initialKey={viewing.key}
-          live={viewing.live}
-          onClose={() => setViewing(null)}
-        />
-      ) : null}
     </div>
+  );
+}
+
+function ShotImage(props: {
+  environmentId: EnvironmentId;
+  shot: PaperShot;
+  alt: string;
+  onExpand: () => void;
+}) {
+  return (
+    <ChatMarkdownAssetImage
+      environmentId={props.environmentId}
+      resource={usePaperThumbnail(props.environmentId, props.shot)}
+      alt={props.alt}
+      style={SHOT_IMAGE_STYLE}
+      onImageExpand={props.onExpand}
+    />
+  );
+}
+
+/** The thread's Paper state for every row, and the one frame viewer the rows open. */
+export function PaperThreadScope(props: {
+  readonly environmentId: EnvironmentId;
+  readonly shots: ReadonlyArray<PaperShot>;
+  readonly activity: PaperActivity;
+  readonly children: ReactNode;
+}) {
+  const [viewing, setViewing] = useState<PaperViewerTarget | null>(null);
+  return (
+    <PaperThreadShotsCtx value={props.shots}>
+      <PaperThreadActivityCtx value={props.activity}>
+        <PaperViewerOpenCtx value={setViewing}>
+          {props.children}
+          {viewing !== null ? (
+            <PaperFrameViewer
+              environmentId={props.environmentId}
+              // The thread's frames, unless the strip had one the thread list has not caught up on.
+              shots={
+                props.shots.some((shot) => shot.key === viewing.key) ? props.shots : viewing.shots
+              }
+              initialKey={viewing.key}
+              live={viewing.live}
+              onClose={() => setViewing(null)}
+            />
+          ) : null}
+        </PaperViewerOpenCtx>
+      </PaperThreadActivityCtx>
+    </PaperThreadShotsCtx>
   );
 }
 

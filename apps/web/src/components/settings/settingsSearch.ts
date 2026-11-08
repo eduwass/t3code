@@ -505,6 +505,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["experiment paper live html frame sharp zoom viewer"],
   },
   {
+    id: "paper-working-indicator",
+    title: "Paper working indicator (experiment)",
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: ["experiment paper working drawing rain shimmer progress agent"],
+  },
+  {
+    id: "paper-live-updates",
+    title: "Follow Paper edits live (experiment)",
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: ["experiment paper live updates follow edits redraw refresh viewer"],
+  },
+  {
     id: "simlock-hosts",
     title: "Simlock device hosts (alpha)",
     to: "/settings/labs",
