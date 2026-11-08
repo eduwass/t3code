@@ -62,6 +62,7 @@ export function PaperRain() {
               style={{
                 width: SIZE,
                 height: SIZE,
+                borderRadius: SIZE / 2,
                 backgroundColor: COLOR,
                 opacity: reduceMotion ? 0.8 : drop.opacity,
               }}

@@ -238,10 +238,10 @@
   top: 0;
   left: 0;
 }
+/* No fade: like Paper's canvas, a new drawing replaces the old one at once. */
 [data-pfv="frame"] iframe {
   display: block;
   border: 0;
-  transition: opacity 150ms ease-out;
 }
 [data-pfv="frame"] iframe[data-hidden] {
   opacity: 0;

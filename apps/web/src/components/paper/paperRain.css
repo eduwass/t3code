@@ -7,6 +7,7 @@
   flex-shrink: 0;
 }
 [data-paper-rain] > span {
+  border-radius: 50%;
   background: oklch(0.7 0.15 258);
   opacity: 0;
   animation: paper-rain-drip linear infinite;
