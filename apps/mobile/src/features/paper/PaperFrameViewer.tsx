@@ -125,6 +125,8 @@ function Glyph(props: { readonly d: string; readonly color: string; readonly siz
 /** The screenshot, fitted inside the canvas; pinch and double-tap zoom it. */
 function ZoomableFrame(props: {
   readonly uri: string | null;
+  /** An empty outline at the frame's size while the live frame loads. */
+  readonly blank: boolean;
   readonly width: number;
   readonly height: number;
   readonly onZoomChange: (zoomed: boolean, scale: number) => void;
@@ -200,16 +202,18 @@ function ZoomableFrame(props: {
           {
             width: props.width,
             height: props.height,
-            backgroundColor: C.frame,
+            backgroundColor: props.blank ? "transparent" : C.frame,
+            borderWidth: props.blank ? 1 : 0,
+            borderColor: C.button,
             shadowColor: "#000",
-            shadowOpacity: 0.5,
+            shadowOpacity: props.blank ? 0 : 0.5,
             shadowRadius: 18,
             shadowOffset: { width: 0, height: 14 },
           },
           style,
         ]}
       >
-        {props.uri !== null ? (
+        {props.uri !== null && !props.blank ? (
           <Image
             source={{ uri: props.uri }}
             contentFit="contain"
@@ -233,6 +237,8 @@ function FramePage(props: {
   readonly height: number;
   readonly insetTop: number;
   readonly insetBottom: number;
+  /** Live frames are on: pages open blank at the frame's size, never on the screenshot. */
+  readonly liveFrames: boolean;
   readonly live: boolean;
   readonly chromeHidden: boolean;
   readonly now: number;
@@ -281,6 +287,8 @@ function FramePage(props: {
   // The frame centers between the bars; a tall one starts at the top and scrolls.
   const top = props.insetTop + Math.max(0, (region - boxHeight) / 2);
   const showLive = props.live && live !== null && readyLoad !== null;
+  // The screenshot is only the fallback, for when Paper cannot render the frame live.
+  const blank = props.liveFrames && !(props.live && latest.error !== null && readyLoad === null);
   const fitPercent = realWidth === null ? null : (boxWidth / realWidth) * 100;
   const detail = capturedLabel(props.frame.capturedAt, props.now);
   return (
@@ -289,6 +297,7 @@ function FramePage(props: {
         <View style={{ position: "absolute", top, left: (props.width - boxWidth) / 2 }}>
           <ZoomableFrame
             uri={uri}
+            blank={blank}
             width={boxWidth}
             height={boxHeight}
             onAspect={setImageAspect}
@@ -490,6 +499,7 @@ function PaperFrameViewer(props: {
               insetTop={insetTop}
               insetBottom={insetBottom}
               // Only the page on screen goes live; each live frame costs Paper calls.
+              liveFrames={liveEnabled}
               live={liveEnabled && position === index}
               chromeHidden={chromeHidden}
               now={now}
