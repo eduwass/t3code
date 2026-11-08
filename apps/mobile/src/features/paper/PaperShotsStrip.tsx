@@ -8,6 +8,7 @@ import { ScrollView, View } from "react-native";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { openPaperViewer } from "./paperFrameViewerState";
+import { currentPaperThreadShots } from "./paperThreadShots";
 import {
   MarkdownImageAvailableWidthContext,
   ThreadMarkdownImage,
@@ -40,19 +41,27 @@ export function PaperShotsStrip(props: {
           (frame) => frame.fileId === shot.fileId && frame.nodeId === shot.nodeId,
         )?.name ?? null)
       : null;
-  const open = (index: number) =>
+  // The viewer pages through the thread's frames, newest first, starting on the one tapped.
+  const open = (key: string) => {
+    const threadShots = currentPaperThreadShots();
+    const frames = threadShots.some((shot) => shot.key === key) ? threadShots : shots;
     openPaperViewer({
       environmentId: props.environmentId,
-      index,
-      frames: shots.map((shot) => ({
+      index: Math.max(
+        0,
+        frames.findIndex((shot) => shot.key === key),
+      ),
+      frames: frames.map((shot) => ({
         key: shot.key,
         fileId: shot.fileId,
         nodeId: shot.nodeId,
         name: nameOf(shot),
         image: shot.image,
         revision: shot.image.itemId,
+        capturedAt: shot.capturedAt,
       })),
     });
+  };
   return (
     <ScrollView
       horizontal
@@ -60,13 +69,13 @@ export function PaperShotsStrip(props: {
       contentContainerClassName="gap-2 px-1 pb-1"
     >
       <MarkdownImageAvailableWidthContext.Provider value={SHOT_WIDTH}>
-        {shots.map((shot, index) => (
+        {shots.map((shot) => (
           <View key={shot.key} style={{ width: SHOT_WIDTH }}>
             <ThreadMarkdownImage
               environmentId={props.environmentId}
               resource={shot.image}
               alt={nameOf(shot) ?? `Paper frame ${shot.nodeId}`}
-              onPressPreview={() => open(index)}
+              onPressPreview={() => open(shot.key)}
             />
           </View>
         ))}
