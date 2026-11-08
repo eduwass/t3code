@@ -108,6 +108,20 @@ export const attemptOrder = (
 
 const keepSuccesses = (ttl: Duration.Input) => (exit: Exit.Exit<unknown, unknown>) =>
   Exit.isSuccess(exit) ? ttl : Duration.zero;
+// A deleted frame is asked about again soon, so an undo in Paper shows up quickly.
+const keepFrames = (ttl: Duration.Input) => (exit: Exit.Exit<PaperResponse, unknown>) =>
+  Exit.isSuccess(exit)
+    ? exit.value._tag === "frameDeleted"
+      ? Duration.seconds(30)
+      : ttl
+    : Duration.zero;
+
+/**
+ * Paper still answers for a deleted frame, with an empty shell and no parent; once the file
+ * reloads, the node is gone. `node` is the parsed `get_node_info` payload, or its error text.
+ */
+export const isDeletedFrame = (node: Record<string, unknown> | string) =>
+  typeof node === "string" ? node.startsWith("Node not found") : node.parentId === null;
 
 const make = Effect.fn("PaperService.make")(function* () {
   const connection = yield* PaperConnection.make();
@@ -279,9 +293,26 @@ const make = Effect.fn("PaperService.make")(function* () {
     { capacity: 64, timeToLive: keepSuccesses(Duration.seconds(30)) },
   );
 
+  /** Asked fresh before a frame is drawn, so a deleted one is not drawn as an empty shell. */
+  const frameDeleted = Effect.fn("PaperService.frameDeleted")(function* (
+    fileId: string,
+    nodeId: string,
+  ) {
+    return yield* payloadJson(yield* call("get_node_info", { fileId, nodeId })).pipe(
+      Effect.map(isDeletedFrame),
+      Effect.catchTags({
+        PaperUnavailableError: (error) =>
+          error.reason === "failed" && isDeletedFrame(error.detail)
+            ? Effect.succeed(true)
+            : Effect.fail(error),
+      }),
+    );
+  });
+
   const frameImages = yield* Cache.makeWith(
     Effect.fn("PaperService.frameImage")(function* (cacheKey: string) {
       const [fileId, nodeId] = split(cacheKey);
+      if (yield* frameDeleted(fileId, nodeId)) return { _tag: "frameDeleted" as const };
       const result = yield* call("get_screenshot", { fileId, nodeId, scale: 0.5 });
       const image = result.content.find(
         (block) => block.type === "image" && typeof block.data === "string",
@@ -301,7 +332,7 @@ const make = Effect.fn("PaperService.make")(function* () {
         .pipe(Effect.mapError(() => failed("Could not store the image.")));
       return { _tag: "frameImage" as const, attachmentId };
     }),
-    { capacity: 256, timeToLive: keepSuccesses(Duration.minutes(2)) },
+    { capacity: 256, timeToLive: keepFrames(Duration.minutes(2)) },
   );
 
   // Frames reference the file's design tokens as CSS variables; without them colors fall back.
@@ -315,6 +346,7 @@ const make = Effect.fn("PaperService.make")(function* () {
   const liveFrames = yield* Cache.makeWith(
     Effect.fn("PaperService.liveFrame")(function* (cacheKey: string) {
       const [fileId, nodeId] = split(cacheKey);
+      if (yield* frameDeleted(fileId, nodeId)) return { _tag: "frameDeleted" as const };
       const frame = yield* Cache.get(nodeInfo, key(fileId, nodeId));
       const jsx = yield* payloadText(
         yield* call("get_jsx", { fileId, nodeId, includeNodeIds: true }),
@@ -345,7 +377,7 @@ const make = Effect.fn("PaperService.make")(function* () {
         height: frame.height ?? size.height ?? 0,
       };
     }),
-    { capacity: 128, timeToLive: keepSuccesses(Duration.minutes(30)) },
+    { capacity: 128, timeToLive: keepFrames(Duration.minutes(30)) },
   );
 
   return PaperService.of({
