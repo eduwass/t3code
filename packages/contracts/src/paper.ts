@@ -94,6 +94,8 @@ export const PaperResponse = Schema.Union([
     width: Schema.Number,
     height: Schema.Number,
   }),
+  /** Answers `frameImage` and `liveFrame` when the frame is no longer in the file. */
+  Schema.TaggedStruct("frameDeleted", {}),
 ]);
 export type PaperResponse = typeof PaperResponse.Type;
 
