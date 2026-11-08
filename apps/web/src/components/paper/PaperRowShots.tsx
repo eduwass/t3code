@@ -15,6 +15,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { ChatMarkdownAssetImage } from "../chat/ChatMarkdownMedia";
 import { type TimelineRow, TimelineRowCtx } from "../chat/timelineRowContext";
 import { PaperFrameViewer, usePaperLiveFrame } from "./PaperFrameViewer";
+import { PaperThreadShotsCtx } from "./paperThreadShots";
 
 export function PaperRowShots({ row }: { row: TimelineRow }) {
   // An expanded group renders its header row and its content row; show the shots once.
@@ -43,7 +44,8 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
     enabled: settings.paperIntegrationEnabled,
     liveEnabled: settings.paperLiveFramesEnabled,
   }));
-  const [viewing, setViewing] = useState<{ shot: PaperShot; live: boolean } | null>(null);
+  const threadShots = use(PaperThreadShotsCtx);
+  const [viewing, setViewing] = useState<{ key: string; live: boolean } | null>(null);
   const visible = enabled && shots !== undefined && shots.length > 0;
   // Names need the server to reach Paper; without it the strip still works, unnamed.
   const names = useEnvironmentQuery(
@@ -72,7 +74,7 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
           className="flex shrink-0 flex-col gap-1"
           onContextMenu={(event) => {
             event.preventDefault();
-            setViewing({ shot, live: true });
+            setViewing({ key: shot.key, live: true });
           }}
         >
           {liveEnabled ? <PaperLivePrefetch environmentId={environmentId} shot={shot} /> : null}
@@ -81,9 +83,7 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
             resource={shot.image}
             alt={nameOf(shot) ?? `Paper frame ${shot.nodeId}`}
             style={SHOT_IMAGE_STYLE}
-            onImageExpand={(preview) =>
-              liveEnabled ? setViewing({ shot, live: true }) : ctx.onImageExpand(preview)
-            }
+            onImageExpand={() => setViewing({ key: shot.key, live: liveEnabled })}
           />
           <figcaption className="min-w-0 text-xs" style={CAPTION_STYLE}>
             <a
@@ -102,8 +102,9 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
       {viewing !== null ? (
         <PaperFrameViewer
           environmentId={environmentId}
-          shot={viewing.shot}
-          name={nameOf(viewing.shot)}
+          // The thread's frames, unless this strip has frames the thread list has not caught up on.
+          shots={threadShots.some((shot) => shot.key === viewing.key) ? threadShots : shots}
+          initialKey={viewing.key}
           live={viewing.live}
           onClose={() => setViewing(null)}
         />
