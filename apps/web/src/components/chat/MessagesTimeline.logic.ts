@@ -609,6 +609,7 @@ type MessagesTimelineRowContent =
       runId: RunId;
       label: string;
       expanded: boolean;
+      paperShots?: ReadonlyArray<PaperShot>;
     }
   | {
       kind: "attempt-fold";
@@ -1969,6 +1970,13 @@ export function deriveMessagesTimelineRows(
           ? [String(entry.entry.projectedItem.sourceItemId)]
           : [];
       });
+      const expanded = input.expandedRunIds?.has(turnFold.runId) ?? false;
+      const foldPaperShots = paperShotsFromProjectedItems(
+        [...turnFold.entryIds].map((entryId) => {
+          const entry = timelineEntryById.get(entryId);
+          return entry?.kind === "work" ? entry.entry.projectedItem : undefined;
+        }),
+      );
       nextRows.push({
         kind: "turn-fold",
         id: `turn-fold:${turnFold.runId}`,
@@ -1976,7 +1984,9 @@ export function deriveMessagesTimelineRows(
         createdAt: turnFold.createdAt,
         runId: turnFold.runId,
         label: turnFold.label,
-        expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
+        expanded,
+        // Collapsed, the run's Paper frames stay under the fold; expanded, its tool rows show them.
+        ...(expanded ? {} : { paperShots: foldPaperShots }),
       });
     }
 
@@ -2813,6 +2823,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.createdAt === bf.createdAt &&
         a.label === bf.label &&
         a.expanded === bf.expanded &&
+        paperShotsKey("paperShots" in a ? a.paperShots : undefined) ===
+          paperShotsKey("paperShots" in bf ? bf.paperShots : undefined) &&
         anchors.length === nextAnchors.length &&
         anchors.every((id, index) => id === nextAnchors[index])
       );

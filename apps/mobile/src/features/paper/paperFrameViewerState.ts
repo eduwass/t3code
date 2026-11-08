@@ -16,6 +16,8 @@ export interface PaperViewerFrame {
   readonly image: AssetResource | null;
   /** The screenshot's tool item, so a newer drawing fetches a new live frame. */
   readonly revision: string | null;
+  /** When the agent last captured the frame (epoch ms); unknown for chips. */
+  readonly capturedAt: number | null;
 }
 
 export interface PaperViewerState {
@@ -45,6 +47,8 @@ export function openPaperFrameReference(
   openPaperViewer({
     environmentId,
     index: 0,
-    frames: [{ key: contextId, ...frame, name: label, image: null, revision: null }],
+    frames: [
+      { key: contextId, ...frame, name: label, image: null, revision: null, capturedAt: null },
+    ],
   });
 }
