@@ -1,6 +1,6 @@
 // T3 Space fork: Paper frames, full size, on a small canvas styled after Paper (board 09 in
-// the T3 Space × Paper file). Opens on the screenshot the thread already has, then swaps to
-// the frame rendered as HTML once the server has it, so text stays sharp when zoomed.
+// the T3 Space × Paper file). Opens on the screenshot the thread already has, then fades in
+// the frame rendered as HTML over it once the server has it, so text stays sharp when zoomed.
 import type { PaperShot } from "@t3tools/client-runtime/work-log/paper-tools";
 import { PAPER_FRAME_SIZE_MESSAGE, type EnvironmentId, type PaperFrame } from "@t3tools/contracts";
 import { isMacPlatform } from "@t3tools/shared/keybindings";
@@ -101,13 +101,17 @@ export function PaperFrameViewer(props: {
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- arrow keys page through frames while the viewer is open
   useEffect(() => {
+    // Capture phase: the dialog stops arrow keys before they bubble to the window.
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.key === "ArrowLeft") go(-1);
-      if (event.key === "ArrowRight") go(1);
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target?.closest('input, textarea, [contenteditable="true"], [role="menu"]')) return;
+      event.preventDefault();
+      go(event.key === "ArrowLeft" ? -1 : 1);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   });
 
   if (shot === undefined) return null;
@@ -236,6 +240,8 @@ function ViewerCanvas(props: {
   const liveData = live.data?._tag === "liveFrame" ? live.data : null;
   // Paper has no size for content-sized frames, so the frame reports the size it renders at.
   const [measured, setMeasured] = useState<{ width: number; height: number } | null>(null);
+  const [liveLoaded, setLiveLoaded] = useState(false);
+  const [imageAspect, setImageAspect] = useState<number | null>(null);
   const frameUrl = useAssetUrlState(
     props.environmentId,
     liveData === null
@@ -248,64 +254,66 @@ function ViewerCanvas(props: {
         },
   );
   const src = frameUrl._tag === "Success" ? frameUrl.url : null;
-  const showLive = liveData !== null && measured !== null;
-  const known =
-    props.frame?.width && props.frame.height
-      ? { width: props.frame.width, height: props.frame.height }
-      : null;
-  const size = measured ?? known;
+  // The screenshot stays underneath; the live frame fades in over it once it has drawn.
+  const showLive = liveData !== null && measured !== null && liveLoaded;
+  const width = measured?.width ?? props.frame?.width ?? 1440;
+  const height = measured?.height ?? props.frame?.height ?? width * (imageAspect ?? 0.62);
 
+  // Pan and zoom are one transform on the stage, set outside React: a trackpad sends a
+  // wheel event per frame, and re-rendering or re-laying out the frame for each one stutters.
   const [box, setBox] = useState<{ width: number; height: number } | null>(null);
-  const [zoomFactor, setZoomFactor] = useState(1);
+  const view = useRef({ x: 0, y: 0, scale: 1, fitted: true });
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const contentRef = useRef<HTMLDivElement | null>(null);
-  // The content point under the cursor when a zoom started, kept under the cursor after it.
-  const zoomAnchor = useRef<{ x: number; y: number; fx: number; fy: number } | null>(null);
-  const availableWidth = box === null ? 960 : Math.max(120, box.width - CANVAS_PAD * 2);
-  const availableHeight =
-    box === null ? 640 : Math.max(120, box.height - CANVAS_PAD * 2 - LABEL_SPACE);
-  // Fit like Paper's zoom to fit, never upscaling; long pages fit their width and scroll.
-  const fit =
-    size === null
-      ? 1
-      : Math.min(
-          1,
-          availableWidth / size.width,
-          size.height / size.width > 2 ? Infinity : availableHeight / size.height,
-        );
-  const zoom = clampZoom(fit * zoomFactor);
-  const baseWidth = size?.width ?? availableWidth;
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const labelRef = useRef<HTMLDivElement | null>(null);
+  const zoomTextRef = useRef<HTMLSpanElement | null>(null);
 
-  const zoomBy = (factor: number, at?: { clientX: number; clientY: number }) => {
-    const viewport = viewportRef.current;
-    const content = contentRef.current;
-    if (viewport !== null && content !== null) {
-      const view = viewport.getBoundingClientRect();
-      const rect = content.getBoundingClientRect();
-      const x = at?.clientX ?? view.left + view.width / 2;
-      const y = at?.clientY ?? view.top + view.height / 2;
-      zoomAnchor.current = {
-        x,
-        y,
-        fx: (x - rect.left) / rect.width,
-        fy: (y - rect.top) / rect.height,
-      };
+  const fitView = () => {
+    const bw = box?.width ?? 960;
+    const bh = box?.height ?? 640;
+    const aw = Math.max(120, bw - CANVAS_PAD * 2);
+    const ah = Math.max(120, bh - CANVAS_PAD * 2 - LABEL_SPACE);
+    // Like Paper's zoom to fit, never upscaling; long pages fit their width and pan.
+    const scale = Math.min(1, aw / width, height / width > 2 ? Infinity : ah / height);
+    const shown = height * scale;
+    const y = shown > ah ? CANVAS_PAD + LABEL_SPACE : (bh - shown + LABEL_SPACE) / 2;
+    return { x: (bw - width * scale) / 2, y, scale, fitted: true };
+  };
+  const apply = (next: { x: number; y: number; scale: number; fitted: boolean }) => {
+    const bw = box?.width ?? 960;
+    const bh = box?.height ?? 640;
+    // Keep part of the frame on the canvas so it cannot be lost.
+    const keep = 64;
+    const x = Math.min(bw - keep, Math.max(keep - width * next.scale, next.x));
+    const y = Math.min(bh - keep, Math.max(keep - height * next.scale, next.y));
+    view.current = { ...next, x, y };
+    const stage = stageRef.current;
+    const label = labelRef.current;
+    if (stage !== null) stage.style.transform = `translate(${x}px, ${y}px) scale(${next.scale})`;
+    if (label !== null) {
+      label.style.transform = `translate(${x}px, ${y - LABEL_SPACE}px)`;
+      label.style.width = `${width * next.scale}px`;
     }
-    setZoomFactor((value) => clampZoom(fit * value * factor) / fit);
+    if (zoomTextRef.current !== null) {
+      const percent = `${Math.round(next.scale * 100)}%`;
+      zoomTextRef.current.textContent = next.fitted ? `Fit · ${percent}` : percent;
+    }
+  };
+  const zoomAt = (factor: number, clientX?: number, clientY?: number) => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    const current = view.current;
+    const scale = clampZoom(current.scale * factor);
+    const px = rect === undefined ? 0 : (clientX ?? rect.left + rect.width / 2) - rect.left;
+    const py = rect === undefined ? 0 : (clientY ?? rect.top + rect.height / 2) - rect.top;
+    const k = scale / current.scale;
+    apply({ x: px - (px - current.x) * k, y: py - (py - current.y) * k, scale, fitted: false });
   };
   const zoomTo = (target: number | "fit") =>
-    zoomBy((target === "fit" ? fit : clampZoom(target)) / zoom);
+    target === "fit" ? apply(fitView()) : zoomAt(clampZoom(target) / view.current.scale);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the DOM so the zoom stays anchored at the cursor
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- positions the stage in the DOM; refits while the user has not moved it
   useLayoutEffect(() => {
-    const anchor = zoomAnchor.current;
-    const viewport = viewportRef.current;
-    const content = contentRef.current;
-    zoomAnchor.current = null;
-    if (anchor === null || viewport === null || content === null) return;
-    const rect = content.getBoundingClientRect();
-    viewport.scrollLeft += rect.left + anchor.fx * rect.width - anchor.x;
-    viewport.scrollTop += rect.top + anchor.fy * rect.height - anchor.y;
+    apply(view.current.fitted ? fitView() : view.current);
   });
 
   const observeViewport = (viewport: HTMLDivElement | null) => {
@@ -315,24 +323,41 @@ function ViewerCanvas(props: {
     const stopResize = observeResize(viewport, ([entry]) => {
       if (entry) setBox({ width: entry.contentRect.width, height: entry.contentRect.height });
     });
-    // Scrolling pans natively; a pinch (ctrlKey) or cmd/ctrl+wheel zooms. React's wheel
-    // listener is passive and cannot stop the page zooming instead.
+    // Scrolling pans, a pinch (ctrlKey) or cmd/ctrl+wheel zooms. React's wheel listener is
+    // passive and cannot stop the page zooming or swiping back instead.
     const wheel = (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
-      zoomBy(Math.exp(-event.deltaY * 0.01), event);
+      if (event.ctrlKey || event.metaKey) {
+        zoomAt(Math.exp(-event.deltaY * 0.01), event.clientX, event.clientY);
+        return;
+      }
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1;
+      const sideways = event.shiftKey && event.deltaX === 0;
+      const current = view.current;
+      apply({
+        ...current,
+        x: current.x - (sideways ? event.deltaY : event.deltaX) * unit,
+        y: current.y - (sideways ? 0 : event.deltaY) * unit,
+        fitted: false,
+      });
     };
     let drag: { x: number; y: number; id: number } | null = null;
     const down = (event: PointerEvent) => {
-      if (event.button !== 0 || event.pointerType !== "mouse") return;
+      if (event.button !== 0) return;
+      event.preventDefault();
       drag = { x: event.clientX, y: event.clientY, id: event.pointerId };
       viewport.setPointerCapture(event.pointerId);
       viewport.style.cursor = "grabbing";
     };
     const move = (event: PointerEvent) => {
       if (drag?.id !== event.pointerId) return;
-      viewport.scrollLeft -= event.clientX - drag.x;
-      viewport.scrollTop -= event.clientY - drag.y;
+      const current = view.current;
+      apply({
+        ...current,
+        x: current.x + event.clientX - drag.x,
+        y: current.y + event.clientY - drag.y,
+        fitted: false,
+      });
       drag = { ...drag, x: event.clientX, y: event.clientY };
     };
     const up = (event: PointerEvent) => {
@@ -368,47 +393,40 @@ function ViewerCanvas(props: {
     return () => window.removeEventListener("message", onMessage);
   };
 
-  const zoomLabel = `${Math.round(zoom * 100)}%`;
   const modifier = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
   return (
     <div data-pfv="canvas">
       <div ref={observeViewport} data-pfv="viewport">
-        <div data-pfv="artboard">
-          <div data-pfv="label" style={{ width: baseWidth * zoom }}>
-            <span>{props.name}</span>
-            {size !== null ? (
-              <span>
-                {Math.round(size.width)} × {Math.round(size.height)}
-              </span>
-            ) : null}
-          </div>
-          <div ref={contentRef} data-pfv="frame" style={{ zoom }}>
-            {src !== null ? (
-              <iframe
-                ref={observeFrame}
-                src={src}
-                title={props.name}
-                // Scripts only for the size report T3 adds; no same-origin, so it stays isolated.
-                sandbox="allow-scripts"
-                data-hidden={showLive ? undefined : ""}
-                style={{
-                  width: measured?.width ?? (liveData?.width || 1440),
-                  height: measured?.height ?? (liveData?.height || 900),
-                }}
-              />
-            ) : null}
-            {!showLive ? (
-              <ScreenshotImage
-                environmentId={props.environmentId}
-                shot={props.shot}
-                alt={props.name}
-                width={baseWidth}
-                height={size?.height ?? null}
-              />
-            ) : null}
-            {/* Keeps wheel, pinch and drag with the viewer; the iframe would swallow them. */}
-            <div data-pfv="shield" />
-          </div>
+        <div ref={labelRef} data-pfv="label">
+          <span>{props.name}</span>
+          <span>
+            {Math.round(width)} × {Math.round(height)}
+          </span>
+        </div>
+        <div ref={stageRef} data-pfv="frame" style={{ width, height }}>
+          <ScreenshotImage
+            environmentId={props.environmentId}
+            shot={props.shot}
+            alt={props.name}
+            onAspect={setImageAspect}
+          />
+          {src !== null ? (
+            <iframe
+              ref={observeFrame}
+              src={src}
+              title={props.name}
+              // Scripts only for the size report T3 adds; no same-origin, so it stays isolated.
+              sandbox="allow-scripts"
+              data-hidden={showLive ? undefined : ""}
+              onLoad={() => setLiveLoaded(true)}
+              style={{
+                width: measured?.width ?? (liveData?.width || 1440),
+                height: measured?.height ?? (liveData?.height || 900),
+              }}
+            />
+          ) : null}
+          {/* Keeps wheel, pinch and drag with the viewer; the iframe would swallow them. */}
+          <div data-pfv="shield" />
         </div>
       </div>
       <div data-pfv="hint">
@@ -437,12 +455,12 @@ function ViewerCanvas(props: {
           <path d="M5.5 3.5L9 7l-3.5 3.5" />
         </ToolbarButton>
         <div data-pfv="divider" />
-        <ToolbarButton label="Zoom out" onClick={() => zoomBy(1 / 1.25)}>
+        <ToolbarButton label="Zoom out" onClick={() => zoomAt(1 / 1.25)}>
           <path d="M3.5 7h7" />
         </ToolbarButton>
         <Menu>
           <MenuTrigger render={<button type="button" data-pfv="zoom" />}>
-            {zoomFactor === 1 ? `Fit · ${zoomLabel}` : zoomLabel}
+            <span ref={zoomTextRef} />
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden>
               <path
                 d="M2.5 4l2.5 2.5L7.5 4"
@@ -462,7 +480,7 @@ function ViewerCanvas(props: {
             ))}
           </MenuPopup>
         </Menu>
-        <ToolbarButton label="Zoom in" onClick={() => zoomBy(1.25)}>
+        <ToolbarButton label="Zoom in" onClick={() => zoomAt(1.25)}>
           <path d="M3.5 7h7M7 3.5v7" />
         </ToolbarButton>
       </div>
@@ -474,21 +492,20 @@ function ScreenshotImage(props: {
   readonly environmentId: EnvironmentId;
   readonly shot: PaperShot;
   readonly alt: string;
-  readonly width: number;
-  readonly height: number | null;
+  readonly onAspect: (aspect: number) => void;
 }) {
   const image = useAssetUrlState(props.environmentId, props.shot.image);
-  const height = props.height ?? "auto";
-  if (image._tag !== "Success") {
-    return (
-      <div
-        data-pfv="placeholder"
-        style={{ width: props.width, height: props.height ?? props.width * 0.62 }}
-      />
-    );
-  }
+  if (image._tag !== "Success") return <div data-pfv="placeholder" />;
   return (
-    <img src={image.url} alt={props.alt} draggable={false} style={{ width: props.width, height }} />
+    <img
+      src={image.url}
+      alt={props.alt}
+      draggable={false}
+      onLoad={(event) => {
+        const { naturalWidth, naturalHeight } = event.currentTarget;
+        if (naturalWidth > 0) props.onAspect(naturalHeight / naturalWidth);
+      }}
+    />
   );
 }
 
