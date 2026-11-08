@@ -5,7 +5,6 @@ import {
   type PaperShot,
 } from "@t3tools/client-runtime/work-log/paper-tools";
 import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
-import { ArrowUpRightIcon } from "lucide-react";
 import { use, useState } from "react";
 
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -19,7 +18,9 @@ import { PaperFrameViewer, usePaperLiveFrame } from "./PaperFrameViewer";
 
 export function PaperRowShots({ row }: { row: TimelineRow }) {
   // An expanded group renders its header row and its content row; show the shots once.
-  if (row.kind === "work-toggle") return <PaperShotsStrip shots={row.paperShots} />;
+  if (row.kind === "work-toggle" || row.kind === "turn-fold") {
+    return <PaperShotsStrip shots={row.paperShots} />;
+  }
   if (row.kind === "work-live" || (row.kind === "work" && !row.isExpandedToolGroup)) {
     return <PaperShotsForEntries entries={row.groupedEntries} />;
   }
@@ -84,17 +85,16 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
               liveEnabled ? setViewing({ shot, live: true }) : ctx.onImageExpand(preview)
             }
           />
-          <figcaption className="flex min-w-0 items-center justify-between gap-2 text-xs">
-            <span className="min-w-0 truncate text-foreground/80">{nameOf(shot)}</span>
+          <figcaption className="min-w-0 text-xs" style={CAPTION_STYLE}>
             <a
               href={shot.url}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex shrink-0 items-center gap-1 text-muted-foreground hover:text-foreground"
+              aria-label={`Open ${nameOf(shot) ?? "this frame"} in Paper`}
+              className="inline-flex max-w-full items-center gap-1.5 text-muted-foreground hover:text-foreground"
             >
               <PaperIcon />
-              Open in Paper
-              <ArrowUpRightIcon className="size-3" aria-hidden />
+              <span className="truncate">{nameOf(shot) ?? "Paper frame"}</span>
             </a>
           </figcaption>
         </figure>
@@ -120,6 +120,7 @@ function PaperLivePrefetch(props: { environmentId: EnvironmentId; shot: PaperSho
 
 // Height-led sizing; the asset's authored width would make each figure as wide as the full image.
 const SHOT_IMAGE_STYLE = { height: "11rem", width: "auto", maxWidth: "20rem" } as const;
+const CAPTION_STYLE = { maxWidth: "20rem" } as const;
 
 const PAPER_ICON_URL = faviconUrlForOrigin("https://paper.design");
 

@@ -1680,6 +1680,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           className="ms-auto"
         />
       </div>
+      <PaperRowShots row={row} />
       {loading ? <WorkHistorySkeleton /> : null}
     </div>
   );
