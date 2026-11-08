@@ -2,7 +2,7 @@
 // sharp. The page reports its size to its parent; a WebView has none, so the
 // script below catches that report, fits the frame to the width and tells the app.
 import { PAPER_FRAME_SIZE_MESSAGE, type EnvironmentId } from "@t3tools/contracts";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
@@ -31,6 +31,21 @@ var zoomed=false,base=0,last=0,lastTap=0;
 addEventListener("touchend",function(e){var t=e.changedTouches[0];if(e.touches.length!==0||!t||Math.abs(t.clientX-sx)>10||Math.abs(t.clientY-sy)>10)return;var now=Date.now();if(now-lastTap<350){e.preventDefault();lastTap=0;if(zoomed)post({type:"fit"})}else lastTap=now},{passive:false});
 if(window.visualViewport)visualViewport.addEventListener("resize",function(){if(!base)return;var v=visualViewport.scale;if(Math.abs(v-last)<last*0.01)return;last=v;zoomed=v>base*1.01;post({type:"zoom",zoomed:zoomed,scale:v})});
 })();true;`;
+
+// A newer drawing swaps into the open page instead of reloading it, so pinch zoom and scroll
+// stay put; the frame's top-left is pinned, so it grows down and right like on desktop.
+const swapScript = (url: string) => `(function(){
+fetch(${JSON.stringify(url)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(html){
+var doc=new DOMParser().parseFromString(html,"text/html");
+var next=doc.body.firstElementChild,old=document.body.firstElementChild;if(!next||!old)return;
+document.head.querySelectorAll("style").forEach(function(n){n.remove()});
+doc.head.querySelectorAll("style,link[rel=stylesheet]").forEach(function(n){
+if(n.tagName==="LINK"&&document.head.querySelector('link[href="'+n.getAttribute("href")+'"]'))return;
+document.head.appendChild(document.importNode(n,true))});
+var before=old.getBoundingClientRect();next=document.importNode(next,true);next.style.flexShrink="0";old.replaceWith(next);
+var after=next.getBoundingClientRect();window.scrollBy(after.left-before.left,after.top-before.top);
+window.ReactNativeWebView.postMessage(JSON.stringify({type:"resized",width:Math.ceil(after.width),height:Math.ceil(after.height)}))
+}).catch(function(){})})();true;`;
 
 interface BridgeMessage {
   readonly type?: unknown;
@@ -62,6 +77,8 @@ export function PaperLiveFrame(props: {
   readonly insetBottom: number;
   /** The frame's size and the page scale it fits at. */
   readonly onReady: (size: { width: number; height: number; scale: number }) => void;
+  /** A newer drawing swapped in and changed the frame's size. */
+  readonly onResize: (size: { width: number; height: number }) => void;
   /** Zoomed past fit, and the scale relative to the frame's real size. */
   readonly onZoomChange: (zoomed: boolean, scale: number) => void;
   /** A double-tap while zoomed; WebKit cannot be zoomed back from script, so the app reloads the frame. */
@@ -92,9 +109,26 @@ export function PaperLiveFrame(props: {
         }
       : null,
   );
+  const attachmentId = live.data?._tag === "liveFrame" ? live.data.attachmentId : null;
   // Signed URLs are re-minted periodically; following them would reload the frame.
   const [uri, setUri] = useState<string | null>(null);
-  if (uri === null && asset._tag === "Success") setUri(asset.url);
+  // The drawing the page first loaded; later ones are swapped in.
+  const [loadedId, setLoadedId] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  if (uri === null && asset._tag === "Success") {
+    setUri(asset.url);
+    setLoadedId(attachmentId);
+  }
+  const webView = useRef<WebView<object>>(null);
+  const swappedId = useRef<string | null>(null);
+  const latestUrl = asset._tag === "Success" ? asset.url : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes a newer drawing into the WebView's page
+  useEffect(() => {
+    if (!ready || attachmentId === null || latestUrl === null) return;
+    if (attachmentId === (swappedId.current ?? loadedId)) return;
+    swappedId.current = attachmentId;
+    webView.current?.injectJavaScript(swapScript(latestUrl));
+  }, [ready, attachmentId, latestUrl, loadedId]);
   if (uri === null) return null;
   const onMessage = (event: WebViewMessageEvent) => {
     const message = readBridgeMessage(event.nativeEvent.data);
@@ -102,8 +136,15 @@ export function PaperLiveFrame(props: {
       const width = num(message.width);
       const height = num(message.height);
       const scale = num(message.scale);
-      if (width !== null && height !== null && scale !== null)
+      if (width !== null && height !== null && scale !== null) {
+        setReady(true);
         props.onReady({ width, height, scale });
+      }
+    }
+    if (message?.type === "resized") {
+      const width = num(message.width);
+      const height = num(message.height);
+      if (width !== null && height !== null) props.onResize({ width, height });
     }
     if (message?.type === "zoom") {
       props.onZoomChange(message.zoomed === true, num(message.scale) ?? 1);
@@ -124,6 +165,7 @@ export function PaperLiveFrame(props: {
       }}
     >
       <WebView<object>
+        ref={webView}
         source={{ uri }}
         style={{ backgroundColor: PAPER_CANVAS }}
         injectedJavaScriptBeforeContentLoaded={bridgeScript(props.insetTop, props.insetBottom)}
