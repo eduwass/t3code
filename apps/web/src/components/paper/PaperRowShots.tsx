@@ -15,7 +15,7 @@ import { serverEnvironment } from "~/state/server";
 import { useEnvironmentQuery } from "~/state/query";
 import { ChatMarkdownAssetImage } from "../chat/ChatMarkdownMedia";
 import { type TimelineRow, TimelineRowCtx } from "../chat/timelineRowContext";
-import { PaperFrameViewer, usePaperLiveFrame } from "./PaperFrameViewer";
+import { PaperFrameViewer, PaperLivePrefetch } from "./PaperFrameViewer";
 import { PaperRain } from "./PaperRain";
 import {
   PaperThreadActivityCtx,
@@ -183,12 +183,6 @@ export function PaperThreadScope(props: {
       </PaperThreadActivityCtx>
     </PaperThreadShotsCtx>
   );
-}
-
-/** Starts the live-frame request while the strip is on screen, so opening is instant. */
-function PaperLivePrefetch(props: { environmentId: EnvironmentId; shot: PaperShot }) {
-  usePaperLiveFrame(props.environmentId, props.shot, true);
-  return null;
 }
 
 // Height-led sizing; the asset's authored width would make each figure as wide as the full image.
