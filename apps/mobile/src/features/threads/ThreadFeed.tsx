@@ -3677,7 +3677,12 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   return (
     <PresentationSource identifier={fileShareSourceIdentifier} style={{ flex: 1 }}>
       <View className="flex-1" onLayout={handleViewportLayout}>
-        <PaperThreadShotsSync rows={groupedFeed} feed={props.feed} runId={unsettledTurnId} />
+        <PaperThreadShotsSync
+          environmentId={props.environmentId}
+          rows={groupedFeed}
+          feed={props.feed}
+          runId={unsettledTurnId}
+        />
         {/* In a split, rows only re-wrap in the render that hands the list its new width. A native
             column resize would re-wrap them first, and the list would place the taller or shorter
             rows at their old offsets until their measurements came back. */}

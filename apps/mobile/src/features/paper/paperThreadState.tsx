@@ -19,6 +19,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import type { PaperViewerFrame } from "./paperFrameViewerState";
 import { paperThreadShots } from "./paperThreadShots";
+import { usePaperLiveFrame } from "./usePaperLiveFrame";
 
 interface PaperThreadState {
   readonly shots: ReadonlyArray<PaperShot>;
@@ -39,6 +40,7 @@ export function currentPaperThreadShots(): ReadonlyArray<PaperShot> {
 }
 
 export function PaperThreadShotsSync(props: {
+  readonly environmentId: EnvironmentId;
   readonly rows: ReadonlyArray<object>;
   /** The feed before folding, so a folded turn's writes still count. */
   readonly feed: ReadonlyArray<ThreadFeedEntry>;
@@ -56,6 +58,32 @@ export function PaperThreadShotsSync(props: {
   useEffect(() => {
     appAtomRegistry.set(paperThreadStateAtom, { shots, activity, working });
   }, [shots, activity, working]);
+  // The newest frames are the ones opened next; their live HTML loads ahead of the tap.
+  const settings = useAtomValue(serverEnvironment.settingsValueAtom(props.environmentId));
+  const prefetch =
+    settings?.paperIntegrationEnabled === true && settings.paperLiveFramesEnabled === true;
+  const { follow } = usePaperFlags(props.environmentId);
+  const revisionOf = (shot: PaperShot) =>
+    follow ? paperLiveRevision(shot, shots, activity) : shot.image.itemId;
+  const newest = prefetch ? shots.slice(0, PREFETCH_FRAMES) : [];
+  return newest.map((shot) => (
+    <PaperLivePrefetch
+      key={shot.key}
+      environmentId={props.environmentId}
+      shot={shot}
+      revision={revisionOf(shot)}
+    />
+  ));
+}
+
+const PREFETCH_FRAMES = 3;
+
+function PaperLivePrefetch(props: {
+  readonly environmentId: EnvironmentId;
+  readonly shot: PaperShot;
+  readonly revision: string | null;
+}) {
+  usePaperLiveFrame(props.environmentId, props.shot, props.revision);
   return null;
 }
 
