@@ -252,6 +252,13 @@
   width: 100%;
   height: 100%;
 }
+/* Hidden until the frame's size is known, so it never jumps; empty until the live frame draws. */
+[data-pfv][data-pending] {
+  visibility: hidden;
+}
+[data-pfv="frame"][data-blank] {
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08);
+}
 [data-pfv="placeholder"] {
   width: 100%;
   height: 100%;
