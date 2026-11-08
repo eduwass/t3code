@@ -9,7 +9,15 @@ const call = (
   toolName: string,
   input: unknown,
   status = "completed",
-): PaperToolCall => ({ threadId, itemId: TurnItemId.make(itemId), toolName, status, input });
+  completedAt: number | null = null,
+): PaperToolCall => ({
+  threadId,
+  itemId: TurnItemId.make(itemId),
+  toolName,
+  status,
+  input,
+  completedAt,
+});
 
 describe("paperToolName", () => {
   it.each([
@@ -26,16 +34,22 @@ describe("paperToolName", () => {
 describe("paperShots", () => {
   it("keeps the newest screenshot per frame in first-seen order and skips other calls", () => {
     const shots = paperShots([
-      call("a", "mcp__paper__get_screenshot", { fileId: "F", nodeId: "1-0" }),
+      call("a", "mcp__paper__get_screenshot", { fileId: "F", nodeId: "1-0" }, "completed", 100),
       call("b", "mcp__paper__write_html", { fileId: "F", targetNodeId: "1-0" }),
       call("c", "paper.get_screenshot", { fileId: "F", nodeId: "2-0" }),
-      call("d", "mcp__paper__get_screenshot", { fileId: "F", nodeId: "1-0", scale: 0.5 }),
+      call(
+        "d",
+        "mcp__paper__get_screenshot",
+        { fileId: "F", nodeId: "1-0", scale: 0.5 },
+        "completed",
+        300,
+      ),
       call("e", "mcp__paper__get_screenshot", { fileId: "F", nodeId: "3-0" }, "failed"),
       call("f", "mcp__paper__get_screenshot", { summary: "too big", truncated: true }),
     ]);
-    expect(shots.map((shot) => [shot.nodeId, shot.image.itemId])).toEqual([
-      ["1-0", "d"],
-      ["2-0", "c"],
+    expect(shots.map((shot) => [shot.nodeId, shot.image.itemId, shot.capturedAt])).toEqual([
+      ["1-0", "d", 300],
+      ["2-0", "c", null],
     ]);
     expect(shots[0]?.image).toEqual({
       _tag: "tool-output-image",
