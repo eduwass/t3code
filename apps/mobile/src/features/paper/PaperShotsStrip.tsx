@@ -11,7 +11,12 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { openPaperViewer } from "./paperFrameViewerState";
-import { currentPaperThreadShots } from "./paperThreadShots";
+import { PaperRain } from "./PaperRain";
+import {
+  currentPaperThreadShots,
+  usePaperDrawingKey,
+  usePaperShotThumbnail,
+} from "./paperThreadState";
 import {
   MarkdownImageAvailableWidthContext,
   ThreadMarkdownImage,
@@ -26,6 +31,7 @@ export function PaperShotsStrip(props: {
 }) {
   const settings = useAtomValue(serverEnvironment.settingsValueAtom(props.environmentId));
   const shots = settings?.paperIntegrationEnabled === true ? (props.shots ?? []) : [];
+  const drawingKey = usePaperDrawingKey(props.environmentId);
   // Names need the server to reach Paper; without it the viewer titles stay generic.
   const names = useEnvironmentQuery(
     shots.length > 0
@@ -75,13 +81,27 @@ export function PaperShotsStrip(props: {
       <MarkdownImageAvailableWidthContext.Provider value={SHOT_WIDTH}>
         {shots.map((shot) => (
           <View key={shot.key} style={{ width: SHOT_WIDTH }}>
-            <ThreadMarkdownImage
+            <ShotImage
               environmentId={props.environmentId}
-              resource={shot.image}
-              // The caption below carries the name; the shared one has no icon and wraps.
-              alt={null}
-              onPressPreview={() => open(shot.key)}
+              shot={shot}
+              onPress={() => open(shot.key)}
             />
+            {shot.key === drawingKey ? (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: 6,
+                  right: 6,
+                  paddingHorizontal: 5,
+                  paddingVertical: 4,
+                  borderRadius: 5,
+                  backgroundColor: "rgba(0,0,0,0.75)",
+                }}
+              >
+                <PaperRain />
+              </View>
+            ) : null}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={nameOf(shot) ?? `Paper frame ${shot.nodeId}`}
@@ -97,5 +117,21 @@ export function PaperShotsStrip(props: {
         ))}
       </MarkdownImageAvailableWidthContext.Provider>
     </ScrollView>
+  );
+}
+
+function ShotImage(props: {
+  readonly environmentId: EnvironmentId;
+  readonly shot: PaperShot;
+  readonly onPress: () => void;
+}) {
+  return (
+    <ThreadMarkdownImage
+      environmentId={props.environmentId}
+      resource={usePaperShotThumbnail(props.environmentId, props.shot)}
+      // The caption below carries the name; the shared one has no icon and wraps.
+      alt={null}
+      onPressPreview={props.onPress}
+    />
   );
 }

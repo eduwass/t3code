@@ -145,8 +145,8 @@ import {
 import { useThreadFindPositionReader } from "./useThreadFindPositionReader";
 import { ThreadActivityAnnouncer } from "./ThreadActivityAnnouncer";
 import { useStableHandoffRuns, useIncrementalTimelineRows, useStableRows } from "./useTimelineRows";
-import { PaperRowShots } from "../paper/PaperRowShots";
-import { PaperThreadShotsCtx, paperThreadShots } from "../paper/paperThreadShots";
+import { PaperRowShots, PaperThreadScope } from "../paper/PaperRowShots";
+import { paperThreadActivity, paperThreadShots } from "../paper/paperThreadShots";
 import { useClientSettings } from "../../hooks/useSettings";
 
 function timelineListStateFor(identity: string): {
@@ -1411,6 +1411,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     });
   });
   const paperShots = paperThreadShots(timelineEntries);
+  const paperActivity = paperThreadActivity(timelineEntries);
   const renderItem = ({ item }: { item: MessagesTimelineRow }) => (
     <TimelineRowCtx value={sharedState}>
       <div
@@ -1426,9 +1427,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
           data-timeline-root="true"
         >
           <AudioPreviewUnmountContext value={onAudioUnmount}>
-            <PaperThreadShotsCtx value={paperShots}>
-              <TimelineRowContent row={item} />
-            </PaperThreadShotsCtx>
+            <TimelineRowContent row={item} />
           </AudioPreviewUnmountContext>
         </div>
       </div>
@@ -1491,85 +1490,95 @@ const ConversationTimeline = memo(function ConversationTimeline({
       {activityAnnouncer}
       <MarkdownFindContext value={findActive}>
         <TimelineRowActivityCtx value={activityState}>
-          <TooltipScrollDismissArea
-            ref={attachTimelineViewportElement}
-            className="relative h-full min-h-0"
-            data-assistant-citation-viewport="true"
+          {/* Above the list: it keeps rows that did not change, and a row's own provider would go stale. */}
+          <PaperThreadScope
+            environmentId={activeThreadEnvironmentId}
+            shots={paperShots}
+            activity={paperActivity}
           >
-            {onCiteAssistantText && citationThreadRef ? (
-              <AssistantSelectionToolbar
-                viewport={timelineViewportElement}
-                threadRef={citationThreadRef}
-                onCite={onCiteAssistantText}
+            <TooltipScrollDismissArea
+              ref={attachTimelineViewportElement}
+              className="relative h-full min-h-0"
+              data-assistant-citation-viewport="true"
+            >
+              {onCiteAssistantText && citationThreadRef ? (
+                <AssistantSelectionToolbar
+                  viewport={timelineViewportElement}
+                  threadRef={citationThreadRef}
+                  onCite={onCiteAssistantText}
+                />
+              ) : null}
+              <LegendList<MessagesTimelineRow>
+                ref={setTimelineList}
+                data={rows}
+                extraData={listExtraData}
+                keyExtractor={keyExtractor}
+                getItemType={getItemType}
+                renderItem={renderItem}
+                estimatedItemSize={90}
+                initialScrollAtEnd={
+                  !findActive && citationRequest === null && rememberedPosition?.atEnd !== false
+                }
+                // Legend needs a data refresh to mount new pins without a scroll event.
+                dataVersion={`${readyCitationRequest?.key ?? listIdentityKey}:${alwaysRenderKeys.join(",")}`}
+                {...(alwaysRender ? { alwaysRender } : {})}
+                onLoad={handleListLoad}
+                {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
+                contentInsetEndAdjustment={anchoredEndSpace ? contentInsetEndAdjustment : 0}
+                maintainScrollAtEnd={
+                  citationPositioning ||
+                  (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
+                  anchoredEndSpace ||
+                  !liveFollowEnabled ||
+                  fullscreenAppRowId !== null
+                    ? false
+                    : isWorking &&
+                        !syncing &&
+                        !prefersReducedMotion &&
+                        settlingListIdentity === null
+                      ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
+                      : TIMELINE_MAINTAIN_SCROLL_AT_END
+                }
+                // A restore owns the scroll position until it lands. Anchoring would
+                // move it for the previous thread's header as the list swaps threads.
+                maintainVisibleContentPosition={
+                  findActive || citationPositioning || restoringThreadPosition
+                    ? false
+                    : maintainVisibleContentPosition
+                }
+                maintainScrollAtEndThreshold={1}
+                onScroll={handleScroll}
+                onItemSizeChanged={scheduleMinimapRefresh}
+                onMetricsChange={scheduleMinimapRefresh}
+                // Keyboard scrolling only moves the focused element; F6 and clicks land here.
+                tabIndex={-1}
+                data-workspace-focus-default
+                className={cn(
+                  "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
+                  topFadeEnabled && "topbar-scroll-fade",
+                )}
+                ListHeaderComponent={listHeader}
+                ListFooterComponent={timelineListFooter}
               />
-            ) : null}
-            <LegendList<MessagesTimelineRow>
-              ref={setTimelineList}
-              data={rows}
-              extraData={listExtraData}
-              keyExtractor={keyExtractor}
-              getItemType={getItemType}
-              renderItem={renderItem}
-              estimatedItemSize={90}
-              initialScrollAtEnd={
-                !findActive && citationRequest === null && rememberedPosition?.atEnd !== false
-              }
-              // Legend needs a data refresh to mount new pins without a scroll event.
-              dataVersion={`${readyCitationRequest?.key ?? listIdentityKey}:${alwaysRenderKeys.join(",")}`}
-              {...(alwaysRender ? { alwaysRender } : {})}
-              onLoad={handleListLoad}
-              {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
-              contentInsetEndAdjustment={anchoredEndSpace ? contentInsetEndAdjustment : 0}
-              maintainScrollAtEnd={
-                citationPositioning ||
-                (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
-                anchoredEndSpace ||
-                !liveFollowEnabled ||
-                fullscreenAppRowId !== null
-                  ? false
-                  : isWorking && !syncing && !prefersReducedMotion && settlingListIdentity === null
-                    ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
-                    : TIMELINE_MAINTAIN_SCROLL_AT_END
-              }
-              // A restore owns the scroll position until it lands. Anchoring would
-              // move it for the previous thread's header as the list swaps threads.
-              maintainVisibleContentPosition={
-                findActive || citationPositioning || restoringThreadPosition
-                  ? false
-                  : maintainVisibleContentPosition
-              }
-              maintainScrollAtEndThreshold={1}
-              onScroll={handleScroll}
-              onItemSizeChanged={scheduleMinimapRefresh}
-              onMetricsChange={scheduleMinimapRefresh}
-              // Keyboard scrolling only moves the focused element; F6 and clicks land here.
-              tabIndex={-1}
-              data-workspace-focus-default
-              className={cn(
-                "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
-                topFadeEnabled && "topbar-scroll-fade",
-              )}
-              ListHeaderComponent={listHeader}
-              ListFooterComponent={timelineListFooter}
-            />
-            <TimelineMinimap
-              items={minimapItems}
-              hasPersistentGutter={minimapHasPersistentGutter}
-              hitStrip={minimapHitStrip}
-              currentIndex={minimapCurrentIndex}
-              atEnd={minimapAtEnd}
-              stripMap={minimapStripMap}
-              onWheel={forwardMinimapWheel}
-              onSelect={(item) => {
-                navigateTimeline();
-                void listRef.current?.scrollToIndex({
-                  index: item.rowIndex,
-                  animated: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-                  viewOffset: TIMELINE_MINIMAP_TARGET_OFFSET,
-                });
-              }}
-            />
-          </TooltipScrollDismissArea>
+              <TimelineMinimap
+                items={minimapItems}
+                hasPersistentGutter={minimapHasPersistentGutter}
+                hitStrip={minimapHitStrip}
+                currentIndex={minimapCurrentIndex}
+                atEnd={minimapAtEnd}
+                stripMap={minimapStripMap}
+                onWheel={forwardMinimapWheel}
+                onSelect={(item) => {
+                  navigateTimeline();
+                  void listRef.current?.scrollToIndex({
+                    index: item.rowIndex,
+                    animated: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+                    viewOffset: TIMELINE_MINIMAP_TARGET_OFFSET,
+                  });
+                }}
+              />
+            </TooltipScrollDismissArea>
+          </PaperThreadScope>
         </TimelineRowActivityCtx>
       </MarkdownFindContext>
     </>
