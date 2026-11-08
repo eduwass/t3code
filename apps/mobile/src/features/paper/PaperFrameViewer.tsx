@@ -236,8 +236,11 @@ function FramePage(props: {
   const uri = useFrameImageUrl(props.environmentId, props.frame);
   const [live, setLive] = useState<{ width: number; height: number; scale: number } | null>(null);
   const [imageAspect, setImageAspect] = useState<number | null>(null);
-  // Bumped to reload the live frame at fit after a double-tap.
+  // Bumped to reload the live frame at fit after a double-tap; the ready one stays up until the new one is.
   const [liveLoad, setLiveLoad] = useState(0);
+  const [readyLoad, setReadyLoad] = useState<number | null>(null);
+  // A page that leaves the screen drops its live frame, so coming back starts from the screenshot.
+  if (!props.live && readyLoad !== null) setReadyLoad(null);
   const known =
     props.meta?.width && props.meta.height ? props.meta.height / props.meta.width : null;
   const aspect = live !== null ? live.height / live.width : (known ?? imageAspect ?? 0.62);
@@ -247,7 +250,7 @@ function FramePage(props: {
   const region = props.height - props.insetTop - props.insetBottom;
   // The frame centers between the bars; a tall one starts at the top and scrolls.
   const top = props.insetTop + Math.max(0, (region - boxHeight) / 2);
-  const showLive = props.live && live !== null;
+  const showLive = props.live && live !== null && readyLoad !== null;
   const fitPercent = realWidth === null ? null : (boxWidth / realWidth) * 100;
   const detail = capturedLabel(props.frame.capturedAt, props.now);
   return (
@@ -265,26 +268,26 @@ function FramePage(props: {
           />
         </View>
       )}
-      {props.live ? (
-        <PaperLiveFrame
-          key={liveLoad}
-          environmentId={props.environmentId}
-          frame={props.frame}
-          visible={showLive}
-          insetTop={props.insetTop}
-          insetBottom={props.insetBottom}
-          onReady={(size) => {
-            setLive(size);
-            props.onZoomChange(false, size.scale * 100);
-          }}
-          onZoomChange={(zoomed, scale) => props.onZoomChange(zoomed, scale * 100)}
-          onFit={() => {
-            setLiveLoad((count) => count + 1);
-            props.onZoomChange(false, 0);
-          }}
-          onSwipe={props.onSwipe}
-        />
-      ) : null}
+      {props.live
+        ? [...new Set([readyLoad ?? liveLoad, liveLoad])].map((load) => (
+            <PaperLiveFrame
+              key={load}
+              environmentId={props.environmentId}
+              frame={props.frame}
+              visible={showLive && load === readyLoad}
+              insetTop={props.insetTop}
+              insetBottom={props.insetBottom}
+              onReady={(size) => {
+                setLive(size);
+                setReadyLoad(load);
+                props.onZoomChange(false, size.scale * 100);
+              }}
+              onZoomChange={(zoomed, scale) => props.onZoomChange(zoomed, scale * 100)}
+              onFit={() => setLiveLoad(load + 1)}
+              onSwipe={props.onSwipe}
+            />
+          ))
+        : null}
       {props.chromeHidden ? null : (
         <View
           pointerEvents="none"
