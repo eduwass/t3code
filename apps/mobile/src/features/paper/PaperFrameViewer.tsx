@@ -45,6 +45,7 @@ import { serverEnvironment } from "../../state/server";
 import { closePaperViewer, paperViewerAtom, type PaperViewerFrame } from "./paperFrameViewerState";
 import { PaperLiveFrame } from "./PaperLiveFrame";
 import { PaperRain } from "./PaperRain";
+import { usePaperLiveFrame } from "./usePaperLiveFrame";
 import { usePaperDrawingKey, usePaperFrameRevision, usePaperFreshImage } from "./paperThreadState";
 
 const PAPER_ICON = require("../../../assets/paper-icon.png");
@@ -240,6 +241,8 @@ function FramePage(props: {
   /** Live frames are on: pages open blank at the frame's size, never on the screenshot. */
   readonly liveFrames: boolean;
   readonly live: boolean;
+  /** Next to the page on screen. */
+  readonly near: boolean;
   readonly chromeHidden: boolean;
   readonly now: number;
   readonly onZoomChange: (zoomed: boolean, percent: number) => void;
@@ -249,18 +252,11 @@ function FramePage(props: {
   const revision = usePaperFrameRevision(props.environmentId, props.frame);
   const drawing = usePaperDrawingKey(props.environmentId) === props.frame.key;
   // Same request the newest live frame makes; failing means deleted in Paper or Paper unreachable.
-  const latest = useEnvironmentQuery(
-    props.live
-      ? serverEnvironment.paper({
-          environmentId: props.environmentId,
-          input: {
-            _tag: "liveFrame",
-            fileId: props.frame.fileId,
-            nodeId: props.frame.nodeId,
-            ...(revision === null ? {} : { revision }),
-          },
-        })
-      : null,
+  // The pages beside the one on screen fetch it too, so swiping to them opens at once.
+  const latest = usePaperLiveFrame(
+    props.environmentId,
+    props.live || props.near ? props.frame : null,
+    revision,
   );
   const [live, setLive] = useState<{ width: number; height: number; scale: number } | null>(null);
   const [imageAspect, setImageAspect] = useState<number | null>(null);
@@ -491,6 +487,7 @@ function PaperFrameViewer(props: {
               // Only the page on screen goes live; each live frame costs Paper calls.
               liveFrames={liveEnabled}
               live={liveEnabled && position === index}
+              near={liveEnabled && Math.abs(position - index) === 1}
               chromeHidden={chromeHidden}
               now={now}
               onSwipe={(direction) => {

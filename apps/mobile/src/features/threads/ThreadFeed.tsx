@@ -3856,7 +3856,12 @@ export const ThreadFeed = memo(function ThreadFeed({
         style={settledPaneWidth !== null ? { width: settledPaneWidth } : undefined}
         onLayout={handleViewportLayout}
       >
-        <PaperThreadShotsSync rows={groupedFeed} feed={props.feed} runId={unsettledTurnId} />
+        <PaperThreadShotsSync
+          environmentId={props.environmentId}
+          rows={groupedFeed}
+          feed={props.feed}
+          runId={unsettledTurnId}
+        />
         <View className="flex-1">
           {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- ThreadFeedScrollView is passed through the iOS-only spread below; the prop rejects undefined. */}
           <KeyboardAwareLegendList

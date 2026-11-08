@@ -6,25 +6,27 @@ import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
-import { useAssetUrlState } from "../../state/assets";
-import { useEnvironmentQuery } from "../../state/query";
-import { serverEnvironment } from "../../state/server";
 import type { PaperViewerFrame } from "./paperFrameViewerState";
+import { usePaperLiveFrame } from "./usePaperLiveFrame";
 
-// Laid out 1440px wide like the web iframe; once the frame reports its size, it fits the
-// width less 16pt margins (never above 100%), centered between the viewer's bars.
-// Native page zoom keeps pinch sharp. "ready" waits for WebKit to apply the new viewport,
-// so the swap from the screenshot never shows the unfitted page.
-const bridgeScript = (insetTop: number, insetBottom: number) => `(function(){
+// The frame fits the width less 16pt margins (never above 100%), centered between the
+// viewer's bars; native page zoom keeps pinch sharp. With the width known up front the page
+// lays out fitted from the start, so "ready" follows its first paint. Otherwise it is laid
+// out 1440px wide, refitted on the size report, and "ready" waits for WebKit to apply that.
+const bridgeScript = (insetTop: number, insetBottom: number, width: number) => `(function(){
 var post=function(m){window.ReactNativeWebView.postMessage(JSON.stringify(m))};
 var meta=document.createElement("meta");meta.name="viewport";meta.content="width=1440";
-document.addEventListener("DOMContentLoaded",function(){document.head.appendChild(meta);document.documentElement.style.webkitTextSizeAdjust="100%";document.documentElement.style.background=${JSON.stringify(PAPER_CANVAS)};document.documentElement.style.touchAction="manipulation"});
-addEventListener("message",function(e){var d=e.data;if(!d||d.type!==${JSON.stringify(PAPER_FRAME_SIZE_MESSAGE)}||!(d.width>0))return;
-var W=screen.width,shown=Math.min(W-32,d.width),vw=W*d.width/shown,s=W/vw;
-var root=document.body.firstElementChild;if(root){root.style.width=d.width+"px";root.style.flexShrink="0"}
+var fitted=0,fs=1;
+function fit(w){var W=screen.width,shown=Math.min(W-32,w),vw=W*w/shown,s=W/vw;
+var root=document.body.firstElementChild;if(root){root.style.width=w+"px";root.style.flexShrink="0"}
 var b=document.body.style;b.margin="0";b.background=${JSON.stringify(PAPER_CANVAS)};b.display="flex";b.alignItems="center";b.justifyContent="center";b.boxSizing="border-box";b.minHeight="100vh";b.paddingTop=(${insetTop}/s)+"px";b.paddingBottom=(${insetBottom}/s)+"px";
-meta.content="width="+vw+",minimum-scale="+s+",maximum-scale="+Math.max(4,s*8);
-setTimeout(function(){if(window.visualViewport)base=visualViewport.scale;post({type:"ready",width:d.width,height:d.height,scale:s})},300)});
+meta.content="width="+vw+",minimum-scale="+s+",maximum-scale="+Math.max(4,s*8);fitted=w;fs=s}
+document.addEventListener("DOMContentLoaded",function(){if(${width}>0)fit(${width});document.head.appendChild(meta);document.documentElement.style.webkitTextSizeAdjust="100%";document.documentElement.style.background=${JSON.stringify(PAPER_CANVAS)};document.documentElement.style.touchAction="manipulation"});
+addEventListener("message",function(e){var d=e.data;if(!d||d.type!==${JSON.stringify(PAPER_FRAME_SIZE_MESSAGE)}||!(d.width>0))return;
+var same=fitted===d.width;if(!same)fit(d.width);
+var report=function(){post({type:"ready",width:d.width,height:d.height,scale:fs})};
+setTimeout(function(){if(window.visualViewport)base=visualViewport.scale;if(!same)report()},300);
+if(same)requestAnimationFrame(function(){requestAnimationFrame(report)})});
 var sx=0,sy=0;addEventListener("touchstart",function(e){if(e.touches.length===1){sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{passive:true});
 addEventListener("touchend",function(e){var t=e.changedTouches[0],dx=t.clientX-sx,dy=t.clientY-sy;if(!zoomed&&e.touches.length===0&&Math.abs(dx)*screen.width/innerWidth>60&&Math.abs(dx)>2*Math.abs(dy))post({type:"swipe",direction:dx<0?1:-1})},{passive:true});
 var zoomed=false,base=0,last=0,lastTap=0;
@@ -34,8 +36,7 @@ if(window.visualViewport)visualViewport.addEventListener("resize",function(){if(
 
 // A newer drawing swaps into the open page instead of reloading it, so pinch zoom and scroll
 // stay put; the frame's top-left is pinned, so it grows down and right like on desktop.
-const swapScript = (url: string) => `(function(){
-fetch(${JSON.stringify(url)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(html){
+const swapScript = (html: string) => `(function(html){
 var doc=new DOMParser().parseFromString(html,"text/html");
 var next=doc.body.firstElementChild,old=document.body.firstElementChild;if(!next||!old)return;
 document.head.querySelectorAll("style").forEach(function(n){n.remove()});
@@ -45,7 +46,7 @@ document.head.appendChild(document.importNode(n,true))});
 var before=old.getBoundingClientRect();next=document.importNode(next,true);next.style.flexShrink="0";old.replaceWith(next);
 var after=next.getBoundingClientRect();window.scrollBy(after.left-before.left,after.top-before.top);
 window.ReactNativeWebView.postMessage(JSON.stringify({type:"resized",width:Math.ceil(after.width),height:Math.ceil(after.height)}))
-}).catch(function(){})})();true;`;
+})(${JSON.stringify(html)});true;`;
 
 interface BridgeMessage {
   readonly type?: unknown;
@@ -87,49 +88,39 @@ export function PaperLiveFrame(props: {
   readonly onSwipe: (direction: 1 | -1) => void;
   readonly visible: boolean;
 }) {
-  const live = useEnvironmentQuery(
-    serverEnvironment.paper({
-      environmentId: props.environmentId,
-      input: {
-        _tag: "liveFrame",
-        fileId: props.frame.fileId,
-        nodeId: props.frame.nodeId,
-        ...(props.frame.revision === null ? {} : { revision: props.frame.revision }),
-      },
-    }),
-  );
-  const asset = useAssetUrlState(
-    props.environmentId,
-    live.data?._tag === "liveFrame"
-      ? {
-          _tag: "attachment",
-          attachmentId: live.data.attachmentId,
-          mimeType: "text/html",
-          disposition: "inline",
-        }
-      : null,
-  );
-  const attachmentId = live.data?._tag === "liveFrame" ? live.data.attachmentId : null;
-  // Signed URLs are re-minted periodically; following them would reload the frame.
-  const [uri, setUri] = useState<string | null>(null);
+  const live = usePaperLiveFrame(props.environmentId, props.frame, props.frame.revision);
+  const attachmentId = live.data?.attachmentId ?? null;
+  // The page loads from the prefetched HTML, or from its URL if that download failed.
+  // Fixed once loaded: re-minted URLs or a newer drawing must not reload the frame.
+  const [source, setSource] = useState<{ html: string } | { uri: string } | null>(null);
   // The drawing the page first loaded; later ones are swapped in.
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  if (uri === null && asset._tag === "Success") {
-    setUri(asset.url);
-    setLoadedId(attachmentId);
+  const [width, setWidth] = useState(0);
+  if (source === null && attachmentId !== null) {
+    const next =
+      live.html !== null
+        ? { html: live.html }
+        : live.htmlFailed && live.url !== null
+          ? { uri: live.url }
+          : null;
+    if (next !== null) {
+      setSource(next);
+      setLoadedId(attachmentId);
+      setWidth(live.data?.width ?? 0);
+    }
   }
   const webView = useRef<WebView<object>>(null);
   const swappedId = useRef<string | null>(null);
-  const latestUrl = asset._tag === "Success" ? asset.url : null;
+  const latestHtml = live.html;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes a newer drawing into the WebView's page
   useEffect(() => {
-    if (!ready || attachmentId === null || latestUrl === null) return;
+    if (!ready || attachmentId === null || latestHtml === null) return;
     if (attachmentId === (swappedId.current ?? loadedId)) return;
     swappedId.current = attachmentId;
-    webView.current?.injectJavaScript(swapScript(latestUrl));
-  }, [ready, attachmentId, latestUrl, loadedId]);
-  if (uri === null) return null;
+    webView.current?.injectJavaScript(swapScript(latestHtml));
+  }, [ready, attachmentId, latestHtml, loadedId]);
+  if (source === null) return null;
   const onMessage = (event: WebViewMessageEvent) => {
     const message = readBridgeMessage(event.nativeEvent.data);
     if (message?.type === "ready") {
@@ -166,11 +157,17 @@ export function PaperLiveFrame(props: {
     >
       <WebView<object>
         ref={webView}
-        source={{ uri }}
+        source={source}
         style={{ backgroundColor: PAPER_CANVAS }}
-        injectedJavaScriptBeforeContentLoaded={bridgeScript(props.insetTop, props.insetBottom)}
+        injectedJavaScriptBeforeContentLoaded={bridgeScript(
+          props.insetTop,
+          props.insetBottom,
+          width,
+        )}
         onMessage={onMessage}
-        onShouldStartLoadWithRequest={(request) => request.url === uri}
+        onShouldStartLoadWithRequest={(request) =>
+          "uri" in source ? request.url === source.uri : request.url === "about:blank"
+        }
         setBuiltInZoomControls
         setDisplayZoomControls={false}
         overScrollMode="never"

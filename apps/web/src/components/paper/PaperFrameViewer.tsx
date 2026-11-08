@@ -26,7 +26,7 @@ const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 const PAPER_ICON = "/paper-icon.png";
 
 /** The live-frame query, shared by prefetch and the viewer so an opened frame is already loaded. */
-export function usePaperLiveFrame(environmentId: EnvironmentId, shot: PaperShot, enabled: boolean) {
+function usePaperLiveFrame(environmentId: EnvironmentId, shot: PaperShot, enabled: boolean) {
   const revision = usePaperLiveRevision(environmentId, shot);
   return useEnvironmentQuery(
     enabled
@@ -40,6 +40,55 @@ export function usePaperLiveFrame(environmentId: EnvironmentId, shot: PaperShot,
           },
         })
       : null,
+  );
+}
+
+/** The signed URL of a live frame's HTML; prefetch and the viewer share it. */
+function usePaperLiveFrameUrl(
+  environmentId: EnvironmentId,
+  liveData: { readonly attachmentId: string } | null,
+): string | null {
+  const frameUrl = useAssetUrlState(
+    environmentId,
+    liveData === null
+      ? null
+      : {
+          _tag: "attachment",
+          attachmentId: liveData.attachmentId,
+          mimeType: "text/html",
+          disposition: "inline",
+        },
+  );
+  return frameUrl._tag === "Success" ? frameUrl.url : null;
+}
+
+const warmedFrameUrls = new Set<string>();
+
+/**
+ * Renders a frame's live HTML ahead of opening it, then loads it once in a hidden iframe so the
+ * browser caches the page under the same key the viewer's iframe uses.
+ */
+export function PaperLivePrefetch(props: { environmentId: EnvironmentId; shot: PaperShot }) {
+  const live = usePaperLiveFrame(props.environmentId, props.shot, true);
+  const url = usePaperLiveFrameUrl(
+    props.environmentId,
+    live.data?._tag === "liveFrame" ? live.data : null,
+  );
+  const [, setWarmed] = useState<string | null>(null);
+  if (url === null || warmedFrameUrls.has(url)) return null;
+  return (
+    <iframe
+      src={url}
+      title=""
+      aria-hidden
+      tabIndex={-1}
+      sandbox="allow-scripts"
+      hidden
+      onLoad={() => {
+        warmedFrameUrls.add(url);
+        setWarmed(url);
+      }}
+    />
   );
 }
 
@@ -194,6 +243,17 @@ export function PaperFrameViewer(props: {
                 />
               ))}
             </div>
+            {props.live
+              ? [props.shots[index - 1], props.shots[index + 1]].map((near) =>
+                  near === undefined ? null : (
+                    <PaperLivePrefetch
+                      key={near.key}
+                      environmentId={props.environmentId}
+                      shot={near}
+                    />
+                  ),
+                )
+              : null}
             <ViewerCanvas
               key={shot.key}
               environmentId={props.environmentId}
@@ -266,18 +326,7 @@ function ViewerCanvas(props: {
     under: string | null;
   } | null>(null);
   const [imageAspect, setImageAspect] = useState<number | null>(null);
-  const frameUrl = useAssetUrlState(
-    props.environmentId,
-    liveData === null
-      ? null
-      : {
-          _tag: "attachment",
-          attachmentId: liveData.attachmentId,
-          mimeType: "text/html",
-          disposition: "inline",
-        },
-  );
-  const src = frameUrl._tag === "Success" ? frameUrl.url : null;
+  const src = usePaperLiveFrameUrl(props.environmentId, liveData);
   // With live frames on, the frame opens empty at its real size and the live frame draws
   // into it; the screenshot is only the fallback when Paper cannot render it live.
   const liveFailed = shown === null && liveData === null && (live.error !== null || !props.live);
