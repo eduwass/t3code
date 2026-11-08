@@ -463,8 +463,10 @@ function PaperFrameViewer(props: {
   };
 
   return (
+    // Closing unmounts the contents mid-fade; an opaque Modal would fade out its white backing.
     <Modal
       animationType="fade"
+      transparent
       onRequestClose={closePaperViewer}
       statusBarTranslucent
       navigationBarTranslucent
