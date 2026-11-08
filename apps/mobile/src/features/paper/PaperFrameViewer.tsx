@@ -65,6 +65,7 @@ const C = {
   frame: "#F4F4F4",
   accent: "#2F6BFF",
   ink: "#141414",
+  warning: "#E8C77A",
 } as const;
 const MAX_SCALE = 6;
 const MARGIN = 16;
@@ -89,7 +90,7 @@ export function capturedLabel(capturedAt: number | null, now: number): string | 
 /** The frame's screenshot URL: the thread's own, or a small one fetched from Paper. */
 function useFrameImageUrl(environmentId: EnvironmentId, frame: PaperViewerFrame): string | null {
   const revision = usePaperFrameRevision(environmentId, frame);
-  const fresh = usePaperFreshImage(environmentId, frame, frame.revision, revision);
+  const fresh = usePaperFreshImage(environmentId, frame, frame.revision, revision).image;
   const fetched = useEnvironmentQuery(
     frame.image === null
       ? serverEnvironment.paper({
@@ -290,7 +291,9 @@ function FramePage(props: {
   const top = props.insetTop + Math.max(0, (region - boxHeight) / 2);
   const showLive = mounted && live !== null && readyLoad !== null;
   // The screenshot is only the fallback, for when Paper cannot render the frame live.
-  const blank = props.liveFrames && !(props.live && latest.error !== null && readyLoad === null);
+  const blank =
+    props.liveFrames &&
+    !(props.live && (latest.error !== null || latest.deleted) && readyLoad === null);
   const fitPercent = realWidth === null ? null : (boxWidth / realWidth) * 100;
   const detail = capturedLabel(props.frame.capturedAt, props.now);
   return (
@@ -352,7 +355,9 @@ function FramePage(props: {
           >
             {props.meta?.name ?? props.frame.name ?? "Paper frame"}
           </Text>
-          {latest.error !== null && readyLoad !== null ? (
+          {latest.deleted ? (
+            <Text style={{ fontSize: 12, lineHeight: 16, color: C.warning }}>Deleted in Paper</Text>
+          ) : latest.error !== null && readyLoad !== null ? (
             <Text style={{ fontSize: 12, lineHeight: 16, color: C.faint }}>
               Couldn't update · last version
             </Text>

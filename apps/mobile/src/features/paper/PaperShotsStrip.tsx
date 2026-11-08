@@ -125,13 +125,38 @@ function ShotImage(props: {
   readonly shot: PaperShot;
   readonly onPress: () => void;
 }) {
+  const thumbnail = usePaperShotThumbnail(props.environmentId, props.shot);
   return (
-    <ThreadMarkdownImage
-      environmentId={props.environmentId}
-      resource={usePaperShotThumbnail(props.environmentId, props.shot)}
-      // The caption below carries the name; the shared one has no icon and wraps.
-      alt={null}
-      onPressPreview={props.onPress}
-    />
+    <View>
+      <View style={{ opacity: thumbnail.deleted ? 0.55 : 1 }}>
+        <ThreadMarkdownImage
+          environmentId={props.environmentId}
+          resource={thumbnail.resource}
+          // The caption below carries the name; the shared one has no icon and wraps.
+          alt={null}
+          onPressPreview={props.onPress}
+        />
+      </View>
+      {thumbnail.deleted ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 6,
+            left: 6,
+            paddingHorizontal: 7,
+            paddingVertical: 3,
+            borderRadius: 5,
+            backgroundColor: "rgba(0,0,0,0.8)",
+          }}
+        >
+          <Text style={{ fontSize: 11, lineHeight: 14, fontWeight: "500", color: DELETED_TEXT }}>
+            Deleted in Paper
+          </Text>
+        </View>
+      ) : null}
+    </View>
   );
 }
+
+const DELETED_TEXT = "#E8C77A";

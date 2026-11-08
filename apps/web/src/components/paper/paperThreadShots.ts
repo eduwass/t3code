@@ -86,7 +86,11 @@ export function usePaperLiveRevision(environmentId: EnvironmentId, shot: PaperSh
 export function usePaperThumbnail(
   environmentId: EnvironmentId,
   shot: PaperShot,
-): PaperShot["image"] | Extract<AssetResource, { readonly _tag: "attachment" }> {
+): {
+  readonly resource: PaperShot["image"] | Extract<AssetResource, { readonly _tag: "attachment" }>;
+  /** Paper no longer has the frame; the last picture stays. */
+  readonly deleted: boolean;
+} {
   const revision = usePaperLiveRevision(environmentId, shot);
   const fresh = useEnvironmentQuery(
     revision === shot.image.itemId
@@ -102,7 +106,11 @@ export function usePaperThumbnail(
     setLatest({ base: shot.image.itemId, attachmentId: fetched });
   }
   // A newer screenshot from the agent replaces anything fetched for an older one.
-  return latest !== null && latest.base === shot.image.itemId
-    ? { _tag: "attachment", attachmentId: latest.attachmentId, disposition: "inline" }
-    : shot.image;
+  return {
+    resource:
+      latest !== null && latest.base === shot.image.itemId
+        ? { _tag: "attachment", attachmentId: latest.attachmentId, disposition: "inline" }
+        : shot.image,
+    deleted: fresh.data?._tag === "frameDeleted",
+  };
 }
