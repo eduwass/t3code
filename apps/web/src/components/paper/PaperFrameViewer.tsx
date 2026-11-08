@@ -1,6 +1,6 @@
 // T3 Space fork: Paper frames, full size, on a small canvas styled after Paper (board 09 in
-// the T3 Space × Paper file). Opens on the screenshot the thread already has, then fades in
-// the frame rendered as HTML over it once the server has it, so text stays sharp when zoomed.
+// the T3 Space × Paper file). Renders the frame as HTML so text stays sharp when
+// zoomed; the thread's screenshot stands in when Paper cannot render it live.
 import type { PaperShot } from "@t3tools/client-runtime/work-log/paper-tools";
 import { PAPER_FRAME_SIZE_MESSAGE, type EnvironmentId, type PaperFrame } from "@t3tools/contracts";
 import { isMacPlatform } from "@t3tools/shared/keybindings";
@@ -278,13 +278,28 @@ function ViewerCanvas(props: {
         },
   );
   const src = frameUrl._tag === "Success" ? frameUrl.url : null;
-  // The screenshot stays underneath; the live frame fades in over it once it has drawn.
-  const measured = shown;
+  // With live frames on, the frame opens empty at its real size and the live frame draws
+  // into it; the screenshot is only the fallback when Paper cannot render it live.
+  const liveFailed = shown === null && liveData === null && (live.error !== null || !props.live);
+  const metaSize =
+    props.frame?.width && props.frame.height
+      ? { width: props.frame.width, height: props.frame.height }
+      : null;
+  const liveSize =
+    liveData?.width && liveData.height ? { width: liveData.width, height: liveData.height } : null;
+  const shotWidth = metaSize?.width ?? 1440;
+  const size =
+    shown ??
+    metaSize ??
+    liveSize ??
+    (liveFailed && imageAspect !== null
+      ? { width: shotWidth, height: shotWidth * imageAspect }
+      : null);
   const frameSrcs = [shown?.under, shown?.src, src].filter(
     (value, i, all): value is string => value != null && all.indexOf(value) === i,
   );
-  const width = measured?.width ?? props.frame?.width ?? 1440;
-  const height = measured?.height ?? props.frame?.height ?? width * (imageAspect ?? 0.62);
+  const width = size?.width ?? 1440;
+  const height = size?.height ?? 900;
 
   // Pan and zoom are one transform on the stage, set outside React: a trackpad sends a
   // wheel event per frame, and re-rendering or re-laying out the frame for each one stutters.
@@ -431,7 +446,7 @@ function ViewerCanvas(props: {
   return (
     <div data-pfv="canvas">
       <div ref={observeViewport} data-pfv="viewport">
-        <div ref={labelRef} data-pfv="label">
+        <div ref={labelRef} data-pfv="label" data-pending={size === null ? "" : undefined}>
           <span data-pfv="label-name">
             {props.drawing ? <PaperRain /> : null}
             {props.name}
@@ -445,13 +460,21 @@ function ViewerCanvas(props: {
             </span>
           )}
         </div>
-        <div ref={stageRef} data-pfv="frame" style={{ width, height }}>
-          <ScreenshotImage
-            environmentId={props.environmentId}
-            shot={props.shot}
-            alt={props.name}
-            onAspect={setImageAspect}
-          />
+        <div
+          ref={stageRef}
+          data-pfv="frame"
+          data-pending={size === null ? "" : undefined}
+          data-blank={liveFailed ? undefined : ""}
+          style={{ width, height }}
+        >
+          {liveFailed ? (
+            <ScreenshotImage
+              environmentId={props.environmentId}
+              shot={props.shot}
+              alt={props.name}
+              onAspect={setImageAspect}
+            />
+          ) : null}
           {frameSrcs.map((frameSrc) => (
             <iframe
               key={frameSrc}
