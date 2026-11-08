@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { emailFromJwt } from "./PaperAccount.ts";
 import { replyMessage } from "./PaperHostedConnection.ts";
-import { attemptOrder, sshHost } from "./PaperService.ts";
+import { attemptOrder, isDeletedFrame, sshHost } from "./PaperService.ts";
 
 describe("attemptOrder", () => {
   it("keeps the saved order and moves a connection that just failed to the end", () => {
@@ -37,5 +37,16 @@ describe("emailFromJwt", () => {
     expect(emailFromJwt(`h.${payload}.s`)).toBe("edu@example.com");
     expect(emailFromJwt("not-a-jwt")).toBeNull();
     expect(emailFromJwt(undefined)).toBeNull();
+  });
+});
+
+describe("isDeletedFrame", () => {
+  it.each([
+    [{ id: "X2-0", parentId: "root_node_p-1-0", childCount: 3 }, false],
+    [{ id: "2UA-2", parentId: null, childCount: 0 }, true],
+    [`Node not found: "2UA-2". The node may have been deleted, the ID is incorrect.`, true],
+    ["Paper is busy, try again.", false],
+  ])("reads %j", (node, deleted) => {
+    expect(isDeletedFrame(node)).toBe(deleted);
   });
 });
