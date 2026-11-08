@@ -13,6 +13,8 @@ import { useEnvironmentQuery } from "~/state/query";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import "./paperFrameViewer.css";
+import { PaperRain } from "./PaperRain";
+import { usePaperDrawingKey, usePaperLiveRevision, usePaperThumbnail } from "./paperThreadShots";
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 8;
@@ -25,6 +27,7 @@ const PAPER_ICON = "/paper-icon.png";
 
 /** The live-frame query, shared by prefetch and the viewer so an opened frame is already loaded. */
 export function usePaperLiveFrame(environmentId: EnvironmentId, shot: PaperShot, enabled: boolean) {
+  const revision = usePaperLiveRevision(environmentId, shot);
   return useEnvironmentQuery(
     enabled
       ? serverEnvironment.paper({
@@ -33,7 +36,7 @@ export function usePaperLiveFrame(environmentId: EnvironmentId, shot: PaperShot,
             _tag: "liveFrame",
             fileId: shot.fileId,
             nodeId: shot.nodeId,
-            revision: shot.image.itemId,
+            revision,
           },
         })
       : null,
@@ -67,6 +70,7 @@ export function PaperFrameViewer(props: {
   );
   const shot = props.shots[index] ?? props.shots[0];
   const closeRef = useRef<HTMLButtonElement>(null);
+  const drawingKey = usePaperDrawingKey(props.environmentId);
   const [now] = useState(() => Date.now());
 
   const names = useEnvironmentQuery(
@@ -175,7 +179,16 @@ export function PaperFrameViewer(props: {
                   environmentId={props.environmentId}
                   shot={railShot}
                   name={nameOf(railShot)}
-                  detail={capturedLabel(railShot.capturedAt, now)}
+                  detail={
+                    railShot.key === drawingKey ? (
+                      <span data-pfv="row-live">
+                        <PaperRain />
+                        Drawing now
+                      </span>
+                    ) : (
+                      capturedLabel(railShot.capturedAt, now)
+                    )
+                  }
                   selected={railShot.key === shot.key}
                   onSelect={() => setCurrentKey(railShot.key)}
                 />
@@ -188,6 +201,7 @@ export function PaperFrameViewer(props: {
               frame={frameOf(shot)}
               name={nameOf(shot)}
               live={props.live}
+              drawing={shot.key === drawingKey}
               index={index}
               count={props.shots.length}
               onStep={go}
@@ -203,11 +217,14 @@ function RailRow(props: {
   readonly environmentId: EnvironmentId;
   readonly shot: PaperShot;
   readonly name: string;
-  readonly detail: string | null;
+  readonly detail: ReactNode;
   readonly selected: boolean;
   readonly onSelect: () => void;
 }) {
-  const image = useAssetUrlState(props.environmentId, props.shot.image);
+  const image = useAssetUrlState(
+    props.environmentId,
+    usePaperThumbnail(props.environmentId, props.shot),
+  );
   return (
     <button
       type="button"
@@ -232,15 +249,22 @@ function ViewerCanvas(props: {
   readonly frame: PaperFrame | null;
   readonly name: string;
   readonly live: boolean;
+  readonly drawing: boolean;
   readonly index: number;
   readonly count: number;
   readonly onStep: (delta: number) => void;
 }) {
   const live = usePaperLiveFrame(props.environmentId, props.shot, props.live);
   const liveData = live.data?._tag === "liveFrame" ? live.data : null;
-  // Paper has no size for content-sized frames, so the frame reports the size it renders at.
-  const [measured, setMeasured] = useState<{ width: number; height: number } | null>(null);
-  const [liveLoaded, setLiveLoaded] = useState(false);
+  // Paper has no size for content-sized frames, so each frame reports the size it renders at.
+  // A newer drawing loads hidden beside the shown one and replaces it once it has reported.
+  const [shown, setShown] = useState<{
+    src: string;
+    width: number;
+    height: number;
+    /** The drawing it replaced, left underneath so the fade-in never shows the old screenshot. */
+    under: string | null;
+  } | null>(null);
   const [imageAspect, setImageAspect] = useState<number | null>(null);
   const frameUrl = useAssetUrlState(
     props.environmentId,
@@ -255,7 +279,10 @@ function ViewerCanvas(props: {
   );
   const src = frameUrl._tag === "Success" ? frameUrl.url : null;
   // The screenshot stays underneath; the live frame fades in over it once it has drawn.
-  const showLive = liveData !== null && measured !== null && liveLoaded;
+  const measured = shown;
+  const frameSrcs = [shown?.under, shown?.src, src].filter(
+    (value, i, all): value is string => value != null && all.indexOf(value) === i,
+  );
   const width = measured?.width ?? props.frame?.width ?? 1440;
   const height = measured?.height ?? props.frame?.height ?? width * (imageAspect ?? 0.62);
 
@@ -380,13 +407,18 @@ function ViewerCanvas(props: {
     };
   };
 
-  const observeFrame = (iframe: HTMLIFrameElement | null) => {
+  const observeFrame = (frameSrc: string) => (iframe: HTMLIFrameElement | null) => {
     if (iframe === null) return;
     const onMessage = (event: MessageEvent) => {
       const data = event.data as { type?: unknown; width?: unknown; height?: unknown } | null;
       if (event.source !== iframe.contentWindow || data?.type !== PAPER_FRAME_SIZE_MESSAGE) return;
       if (typeof data.width === "number" && typeof data.height === "number" && data.width > 0) {
-        setMeasured({ width: data.width, height: data.height });
+        const size = { width: data.width, height: data.height };
+        setShown((prev) =>
+          prev?.src === frameSrc
+            ? { ...prev, ...size }
+            : { src: frameSrc, ...size, under: prev?.src ?? null },
+        );
       }
     };
     window.addEventListener("message", onMessage);
@@ -398,10 +430,18 @@ function ViewerCanvas(props: {
     <div data-pfv="canvas">
       <div ref={observeViewport} data-pfv="viewport">
         <div ref={labelRef} data-pfv="label">
-          <span>{props.name}</span>
-          <span>
-            {Math.round(width)} × {Math.round(height)}
+          <span data-pfv="label-name">
+            {props.drawing ? <PaperRain /> : null}
+            {props.name}
           </span>
+          {live.error !== null && shown !== null ? (
+            // Deleted in Paper, or Paper unreachable: the last drawing stays up.
+            <span>Couldn't update · showing the last version</span>
+          ) : (
+            <span>
+              {Math.round(width)} × {Math.round(height)}
+            </span>
+          )}
         </div>
         <div ref={stageRef} data-pfv="frame" style={{ width, height }}>
           <ScreenshotImage
@@ -410,21 +450,21 @@ function ViewerCanvas(props: {
             alt={props.name}
             onAspect={setImageAspect}
           />
-          {src !== null ? (
+          {frameSrcs.map((frameSrc) => (
             <iframe
-              ref={observeFrame}
-              src={src}
+              key={frameSrc}
+              ref={observeFrame(frameSrc)}
+              src={frameSrc}
               title={props.name}
               // Scripts only for the size report T3 adds; no same-origin, so it stays isolated.
               sandbox="allow-scripts"
-              data-hidden={showLive ? undefined : ""}
-              onLoad={() => setLiveLoaded(true)}
+              data-hidden={shown?.src === frameSrc || shown?.under === frameSrc ? undefined : ""}
               style={{
-                width: measured?.width ?? (liveData?.width || 1440),
-                height: measured?.height ?? (liveData?.height || 900),
+                width: shown?.src === frameSrc ? shown.width : liveData?.width || 1440,
+                height: shown?.src === frameSrc ? shown.height : liveData?.height || 900,
               }}
             />
-          ) : null}
+          ))}
           {/* Keeps wheel, pinch and drag with the viewer; the iframe would swallow them. */}
           <div data-pfv="shield" />
         </div>
@@ -494,7 +534,10 @@ function ScreenshotImage(props: {
   readonly alt: string;
   readonly onAspect: (aspect: number) => void;
 }) {
-  const image = useAssetUrlState(props.environmentId, props.shot.image);
+  const image = useAssetUrlState(
+    props.environmentId,
+    usePaperThumbnail(props.environmentId, props.shot),
+  );
   if (image._tag !== "Success") return <div data-pfv="placeholder" />;
   return (
     <img

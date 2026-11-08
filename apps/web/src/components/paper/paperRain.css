@@ -1,0 +1,40 @@
+/* T3 Space fork. Opacity only, so the compositor animates it without repainting. */
+[data-paper-rain] {
+  display: inline-grid;
+  grid-template-columns: repeat(3, 3px);
+  grid-template-rows: repeat(2, 3px);
+  gap: 3px;
+  flex-shrink: 0;
+}
+[data-paper-rain] > span {
+  background: oklch(0.7 0.15 258);
+  opacity: 0;
+  animation: paper-rain-drip linear infinite;
+}
+@keyframes paper-rain-drip {
+  0% {
+    opacity: 1;
+  }
+  18% {
+    opacity: 0.97;
+  }
+  27% {
+    opacity: 0.69;
+  }
+  33% {
+    opacity: 0.31;
+  }
+  39% {
+    opacity: 0.08;
+  }
+  48%,
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-paper-rain] > span {
+    animation: none;
+    opacity: 0.8;
+  }
+}

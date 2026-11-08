@@ -44,8 +44,11 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { closePaperViewer, paperViewerAtom, type PaperViewerFrame } from "./paperFrameViewerState";
 import { PaperLiveFrame } from "./PaperLiveFrame";
+import { PaperRain } from "./PaperRain";
+import { usePaperDrawingKey, usePaperFrameRevision, usePaperFreshImage } from "./paperThreadState";
 
 const PAPER_ICON = require("../../../assets/paper-icon.png");
+const DRAWING_TEXT = "#9DB4F0";
 const C = {
   canvas: "#181818",
   panel: "#1C1C1C",
@@ -84,6 +87,8 @@ export function capturedLabel(capturedAt: number | null, now: number): string | 
 
 /** The frame's screenshot URL: the thread's own, or a small one fetched from Paper. */
 function useFrameImageUrl(environmentId: EnvironmentId, frame: PaperViewerFrame): string | null {
+  const revision = usePaperFrameRevision(environmentId, frame);
+  const fresh = usePaperFreshImage(environmentId, frame, frame.revision, revision);
   const fetched = useEnvironmentQuery(
     frame.image === null
       ? serverEnvironment.paper({
@@ -93,6 +98,7 @@ function useFrameImageUrl(environmentId: EnvironmentId, frame: PaperViewerFrame)
       : null,
   );
   const resource: AssetResource | null =
+    fresh ??
     frame.image ??
     (fetched.data?._tag === "frameImage"
       ? { _tag: "attachment", attachmentId: fetched.data.attachmentId, disposition: "inline" }
@@ -234,10 +240,34 @@ function FramePage(props: {
   readonly onSwipe: (direction: 1 | -1) => void;
 }) {
   const uri = useFrameImageUrl(props.environmentId, props.frame);
+  const revision = usePaperFrameRevision(props.environmentId, props.frame);
+  const drawing = usePaperDrawingKey(props.environmentId) === props.frame.key;
+  // Same request the newest live frame makes; failing means deleted in Paper or Paper unreachable.
+  const latest = useEnvironmentQuery(
+    props.live
+      ? serverEnvironment.paper({
+          environmentId: props.environmentId,
+          input: {
+            _tag: "liveFrame",
+            fileId: props.frame.fileId,
+            nodeId: props.frame.nodeId,
+            ...(revision === null ? {} : { revision }),
+          },
+        })
+      : null,
+  );
   const [live, setLive] = useState<{ width: number; height: number; scale: number } | null>(null);
   const [imageAspect, setImageAspect] = useState<number | null>(null);
   // Bumped to reload the live frame at fit after a double-tap; the ready one stays up until the new one is.
+  // A newer drawing loads the same way, so the frame on screen stays up until the new one is ready.
   const [liveLoad, setLiveLoad] = useState(0);
+  const [loadedRevision, setLoadedRevision] = useState(revision);
+  // A reload resets WebKit's pinch zoom, so newer drawings wait until the frame is back at fit.
+  const [zoomedIn, setZoomedIn] = useState(false);
+  if (loadedRevision !== revision && !zoomedIn) {
+    setLoadedRevision(revision);
+    setLiveLoad(liveLoad + 1);
+  }
   const [readyLoad, setReadyLoad] = useState<number | null>(null);
   // A page that leaves the screen drops its live frame, so coming back starts from the screenshot.
   if (!props.live && readyLoad !== null) setReadyLoad(null);
@@ -273,16 +303,20 @@ function FramePage(props: {
             <PaperLiveFrame
               key={load}
               environmentId={props.environmentId}
-              frame={props.frame}
+              frame={{ ...props.frame, revision }}
               visible={showLive && load === readyLoad}
               insetTop={props.insetTop}
               insetBottom={props.insetBottom}
               onReady={(size) => {
                 setLive(size);
                 setReadyLoad(load);
+                setZoomedIn(false);
                 props.onZoomChange(false, size.scale * 100);
               }}
-              onZoomChange={(zoomed, scale) => props.onZoomChange(zoomed, scale * 100)}
+              onZoomChange={(zoomed, scale) => {
+                setZoomedIn(zoomed);
+                props.onZoomChange(zoomed, scale * 100);
+              }}
               onFit={() => setLiveLoad(load + 1)}
               onSwipe={props.onSwipe}
             />
@@ -307,7 +341,16 @@ function FramePage(props: {
           >
             {props.meta?.name ?? props.frame.name ?? "Paper frame"}
           </Text>
-          {detail !== null ? (
+          {latest.error !== null && readyLoad !== null ? (
+            <Text style={{ fontSize: 12, lineHeight: 16, color: C.faint }}>
+              Couldn't update · last version
+            </Text>
+          ) : drawing ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <PaperRain />
+              <Text style={{ fontSize: 12, lineHeight: 16, color: DRAWING_TEXT }}>Drawing now</Text>
+            </View>
+          ) : detail !== null ? (
             <Text style={{ fontSize: 12, lineHeight: 16, color: C.faint }}>{detail}</Text>
           ) : null}
         </View>
@@ -365,6 +408,7 @@ function PaperFrameViewer(props: {
     percent: 0,
   });
   const [listOpen, setListOpen] = useState(false);
+  const drawingKey = usePaperDrawingKey(props.environmentId);
   const [list, setList] = useState<FlatList<PaperViewerFrame> | null>(null);
   const [now] = useState(() => Date.now());
   const settings = useAtomValue(serverEnvironment.settingsValueAtom(props.environmentId));
@@ -742,7 +786,14 @@ function PaperFrameViewer(props: {
                         >
                           {nameOf(frame)}
                         </Text>
-                        {detail !== null ? (
+                        {frame.key === drawingKey ? (
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+                            <PaperRain />
+                            <Text style={{ fontSize: 13, lineHeight: 18, color: DRAWING_TEXT }}>
+                              Drawing now
+                            </Text>
+                          </View>
+                        ) : detail !== null ? (
                           <Text
                             style={{
                               fontSize: 13,

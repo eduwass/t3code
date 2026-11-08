@@ -377,7 +377,10 @@ const make = Effect.fn("PaperService.make")(function* () {
         case "listFrames":
           return yield* Cache.get(fileFrames, input.fileId);
         case "frameImage":
-          return yield* Cache.get(frameImages, key(input.fileId, input.nodeId));
+          return yield* Cache.get(
+            frameImages,
+            key(input.fileId, input.nodeId, input.revision ?? ""),
+          );
         case "liveFrame":
           return yield* Cache.get(
             liveFrames,
