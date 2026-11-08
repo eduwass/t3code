@@ -265,15 +265,8 @@ function FramePage(props: {
   const [live, setLive] = useState<{ width: number; height: number; scale: number } | null>(null);
   const [imageAspect, setImageAspect] = useState<number | null>(null);
   // Bumped to reload the live frame at fit after a double-tap; the ready one stays up until the new one is.
-  // A newer drawing loads the same way, so the frame on screen stays up until the new one is ready.
+  // Newer drawings swap into the open page instead, keeping zoom and scroll.
   const [liveLoad, setLiveLoad] = useState(0);
-  const [loadedRevision, setLoadedRevision] = useState(revision);
-  // A reload resets WebKit's pinch zoom, so newer drawings wait until the frame is back at fit.
-  const [zoomedIn, setZoomedIn] = useState(false);
-  if (loadedRevision !== revision && !zoomedIn) {
-    setLoadedRevision(revision);
-    setLiveLoad(liveLoad + 1);
-  }
   const [readyLoad, setReadyLoad] = useState<number | null>(null);
   // A page that leaves the screen drops its live frame, so coming back starts from the screenshot.
   if (!props.live && readyLoad !== null) setReadyLoad(null);
@@ -319,13 +312,10 @@ function FramePage(props: {
               onReady={(size) => {
                 setLive(size);
                 setReadyLoad(load);
-                setZoomedIn(false);
                 props.onZoomChange(false, size.scale * 100);
               }}
-              onZoomChange={(zoomed, scale) => {
-                setZoomedIn(zoomed);
-                props.onZoomChange(zoomed, scale * 100);
-              }}
+              onResize={(size) => setLive((prev) => (prev === null ? prev : { ...prev, ...size }))}
+              onZoomChange={(zoomed, scale) => props.onZoomChange(zoomed, scale * 100)}
               onFit={() => setLiveLoad(load + 1)}
               onSwipe={props.onSwipe}
             />
