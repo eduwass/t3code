@@ -6,7 +6,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { paperNodeUrl } from "@t3tools/client-runtime/work-log/paper-tools";
 import type { AssetResource, EnvironmentId, PaperFrame } from "@t3tools/contracts";
 import { Image } from "expo-image";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import {
   FlatList,
   Modal,
@@ -264,8 +264,21 @@ function FramePage(props: {
   // Newer drawings swap into the open page instead, keeping zoom and scroll.
   const [liveLoad, setLiveLoad] = useState(0);
   const [readyLoad, setReadyLoad] = useState<number | null>(null);
-  // A page that leaves the screen drops its live frame, so coming back starts from the screenshot.
-  if (!props.live && readyLoad !== null) setReadyLoad(null);
+  const [zoomed, setZoomed] = useState(false);
+  // The pages beside the one on screen draw too, so a swipe lands on a finished page.
+  const mounted = props.live || props.near;
+  if (!mounted && readyLoad !== null) setReadyLoad(null);
+  // A zoomed page swiped away reloads at fit, so it is not still zoomed when it comes back.
+  if (!props.live && zoomed) {
+    setZoomed(false);
+    setLiveLoad(liveLoad + 1);
+  }
+  const fitScale = live?.scale ?? null;
+  const reportFit = useEffectEvent((scale: number) => props.onZoomChange(false, scale * 100));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a page drawn beside the screen reports its fit scale when it becomes the one shown
+  useEffect(() => {
+    if (props.live && fitScale !== null) reportFit(fitScale);
+  }, [props.live, fitScale]);
   const known =
     props.meta?.width && props.meta.height ? props.meta.height / props.meta.width : null;
   const aspect = live !== null ? live.height / live.width : (known ?? imageAspect ?? 0.62);
@@ -275,7 +288,7 @@ function FramePage(props: {
   const region = props.height - props.insetTop - props.insetBottom;
   // The frame centers between the bars; a tall one starts at the top and scrolls.
   const top = props.insetTop + Math.max(0, (region - boxHeight) / 2);
-  const showLive = props.live && live !== null && readyLoad !== null;
+  const showLive = mounted && live !== null && readyLoad !== null;
   // The screenshot is only the fallback, for when Paper cannot render the frame live.
   const blank = props.liveFrames && !(props.live && latest.error !== null && readyLoad === null);
   const fitPercent = realWidth === null ? null : (boxWidth / realWidth) * 100;
@@ -296,7 +309,7 @@ function FramePage(props: {
           />
         </View>
       )}
-      {props.live
+      {mounted
         ? [...new Set([readyLoad ?? liveLoad, liveLoad])].map((load) => (
             <PaperLiveFrame
               key={load}
@@ -311,7 +324,10 @@ function FramePage(props: {
                 props.onZoomChange(false, size.scale * 100);
               }}
               onResize={(size) => setLive((prev) => (prev === null ? prev : { ...prev, ...size }))}
-              onZoomChange={(zoomed, scale) => props.onZoomChange(zoomed, scale * 100)}
+              onZoomChange={(next, scale) => {
+                setZoomed(next);
+                props.onZoomChange(next, scale * 100);
+              }}
               onFit={() => setLiveLoad(load + 1)}
               onSwipe={props.onSwipe}
             />
