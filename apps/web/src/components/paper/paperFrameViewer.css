@@ -222,6 +222,9 @@
   color: var(--pfv-faint);
   font-variant-numeric: tabular-nums;
 }
+[data-pfv="label"] span[data-pfv="deleted"] {
+  color: var(--color-warning);
+}
 [data-pfv="frame"] {
   position: absolute;
   top: 0;

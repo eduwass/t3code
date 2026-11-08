@@ -84,6 +84,8 @@ export function usePaperLiveFrame(
   return {
     error: live.error,
     data,
+    /** Paper no longer has the frame. */
+    deleted: live.data?._tag === "frameDeleted",
     url,
     html: cached ?? settled?.html ?? null,
     /** The download failed; the page view loads the URL itself instead. */

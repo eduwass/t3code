@@ -26,7 +26,7 @@ const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 const PAPER_ICON = "/paper-icon.png";
 
 /** The live-frame query, shared by prefetch and the viewer so an opened frame is already loaded. */
-function usePaperLiveFrame(environmentId: EnvironmentId, shot: PaperShot, enabled: boolean) {
+export function usePaperLiveFrame(environmentId: EnvironmentId, shot: PaperShot, enabled: boolean) {
   const revision = usePaperLiveRevision(environmentId, shot);
   return useEnvironmentQuery(
     enabled
@@ -283,7 +283,7 @@ function RailRow(props: {
 }) {
   const image = useAssetUrlState(
     props.environmentId,
-    usePaperThumbnail(props.environmentId, props.shot),
+    usePaperThumbnail(props.environmentId, props.shot).resource,
   );
   return (
     <button
@@ -316,6 +316,7 @@ function ViewerCanvas(props: {
 }) {
   const live = usePaperLiveFrame(props.environmentId, props.shot, props.live);
   const liveData = live.data?._tag === "liveFrame" ? live.data : null;
+  const deleted = live.data?._tag === "frameDeleted";
   // Paper has no size for content-sized frames, so each frame reports the size it renders at.
   // A newer drawing loads hidden beside the shown one and replaces it once it has reported.
   const [shown, setShown] = useState<{
@@ -329,7 +330,8 @@ function ViewerCanvas(props: {
   const src = usePaperLiveFrameUrl(props.environmentId, liveData);
   // With live frames on, the frame opens empty at its real size and the live frame draws
   // into it; the screenshot is only the fallback when Paper cannot render it live.
-  const liveFailed = shown === null && liveData === null && (live.error !== null || !props.live);
+  const liveFailed =
+    shown === null && liveData === null && (live.error !== null || deleted || !props.live);
   const metaSize =
     props.frame?.width && props.frame.height
       ? { width: props.frame.width, height: props.frame.height }
@@ -500,8 +502,10 @@ function ViewerCanvas(props: {
             {props.drawing ? <PaperRain /> : null}
             {props.name}
           </span>
-          {live.error !== null && shown !== null ? (
-            // Deleted in Paper, or Paper unreachable: the last drawing stays up.
+          {deleted ? (
+            <span data-pfv="deleted">Deleted in Paper · showing the last version</span>
+          ) : live.error !== null && shown !== null ? (
+            // Paper unreachable: the last drawing stays up.
             <span>Couldn't update · showing the last version</span>
           ) : (
             <span>
@@ -610,7 +614,7 @@ function ScreenshotImage(props: {
 }) {
   const image = useAssetUrlState(
     props.environmentId,
-    usePaperThumbnail(props.environmentId, props.shot),
+    usePaperThumbnail(props.environmentId, props.shot).resource,
   );
   if (image._tag !== "Success") return <div data-pfv="placeholder" />;
   return (
