@@ -5,7 +5,6 @@ import {
   type PaperShot,
 } from "@t3tools/client-runtime/work-log/paper-tools";
 import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
-import { ArrowUpRightIcon } from "lucide-react";
 import { use, useState } from "react";
 
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -16,10 +15,13 @@ import { useEnvironmentQuery } from "~/state/query";
 import { ChatMarkdownAssetImage } from "../chat/ChatMarkdownMedia";
 import { type TimelineRow, TimelineRowCtx } from "../chat/timelineRowContext";
 import { PaperFrameViewer, usePaperLiveFrame } from "./PaperFrameViewer";
+import { PaperThreadShotsCtx } from "./paperThreadShots";
 
 export function PaperRowShots({ row }: { row: TimelineRow }) {
   // An expanded group renders its header row and its content row; show the shots once.
-  if (row.kind === "work-toggle") return <PaperShotsStrip shots={row.paperShots} />;
+  if (row.kind === "work-toggle" || row.kind === "turn-fold") {
+    return <PaperShotsStrip shots={row.paperShots} />;
+  }
   if (row.kind === "work-live" || (row.kind === "work" && !row.isExpandedToolGroup)) {
     return <PaperShotsForEntries entries={row.groupedEntries} />;
   }
@@ -42,7 +44,8 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
     enabled: settings.paperIntegrationEnabled,
     liveEnabled: settings.paperLiveFramesEnabled,
   }));
-  const [viewing, setViewing] = useState<{ shot: PaperShot; live: boolean } | null>(null);
+  const threadShots = use(PaperThreadShotsCtx);
+  const [viewing, setViewing] = useState<{ key: string; live: boolean } | null>(null);
   const visible = enabled && shots !== undefined && shots.length > 0;
   // Names need the server to reach Paper; without it the strip still works, unnamed.
   const names = useEnvironmentQuery(
@@ -71,7 +74,7 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
           className="flex shrink-0 flex-col gap-1"
           onContextMenu={(event) => {
             event.preventDefault();
-            setViewing({ shot, live: true });
+            setViewing({ key: shot.key, live: true });
           }}
         >
           {liveEnabled ? <PaperLivePrefetch environmentId={environmentId} shot={shot} /> : null}
@@ -80,21 +83,18 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
             resource={shot.image}
             alt={nameOf(shot) ?? `Paper frame ${shot.nodeId}`}
             style={SHOT_IMAGE_STYLE}
-            onImageExpand={(preview) =>
-              liveEnabled ? setViewing({ shot, live: true }) : ctx.onImageExpand(preview)
-            }
+            onImageExpand={() => setViewing({ key: shot.key, live: liveEnabled })}
           />
-          <figcaption className="flex min-w-0 items-center justify-between gap-2 text-xs">
-            <span className="min-w-0 truncate text-foreground/80">{nameOf(shot)}</span>
+          <figcaption className="min-w-0 text-xs" style={CAPTION_STYLE}>
             <a
               href={shot.url}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex shrink-0 items-center gap-1 text-muted-foreground hover:text-foreground"
+              aria-label={`Open ${nameOf(shot) ?? "this frame"} in Paper`}
+              className="inline-flex max-w-full items-center gap-1.5 text-muted-foreground hover:text-foreground"
             >
               <PaperIcon />
-              Open in Paper
-              <ArrowUpRightIcon className="size-3" aria-hidden />
+              <span className="truncate">{nameOf(shot) ?? "Paper frame"}</span>
             </a>
           </figcaption>
         </figure>
@@ -102,8 +102,9 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
       {viewing !== null ? (
         <PaperFrameViewer
           environmentId={environmentId}
-          shot={viewing.shot}
-          name={nameOf(viewing.shot)}
+          // The thread's frames, unless this strip has frames the thread list has not caught up on.
+          shots={threadShots.some((shot) => shot.key === viewing.key) ? threadShots : shots}
+          initialKey={viewing.key}
           live={viewing.live}
           onClose={() => setViewing(null)}
         />
@@ -120,6 +121,7 @@ function PaperLivePrefetch(props: { environmentId: EnvironmentId; shot: PaperSho
 
 // Height-led sizing; the asset's authored width would make each figure as wide as the full image.
 const SHOT_IMAGE_STYLE = { height: "11rem", width: "auto", maxWidth: "20rem" } as const;
+const CAPTION_STYLE = { maxWidth: "20rem" } as const;
 
 const PAPER_ICON_URL = faviconUrlForOrigin("https://paper.design");
 

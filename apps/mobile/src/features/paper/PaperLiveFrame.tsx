@@ -11,28 +11,44 @@ import { serverEnvironment } from "../../state/server";
 import type { PaperViewerFrame } from "./paperFrameViewerState";
 
 // Laid out 1440px wide like the web viewer's iframe, so boards keep their shape. Once the
-// frame reports its size, the viewport takes that width and WebKit fits it to the screen;
-// frames narrower than the phone stay at 100%. Native page zoom keeps pinch zoom sharp.
-const BRIDGE_SCRIPT = `(function(){
+// frame reports its size, the page becomes the viewer's canvas: the frame fits the width
+// less 16pt margins (never above 100%), centered between the viewer's bars. Native page
+// zoom keeps pinch zoom sharp, and the page reports its scale for the zoom pill.
+const bridgeScript = (insetTop: number, insetBottom: number) => `(function(){
 var post=function(m){window.ReactNativeWebView.postMessage(JSON.stringify(m))};
 var meta=document.createElement("meta");meta.name="viewport";meta.content="width=1440";
-document.addEventListener("DOMContentLoaded",function(){document.head.appendChild(meta);document.documentElement.style.webkitTextSizeAdjust="100%"});
+document.addEventListener("DOMContentLoaded",function(){document.head.appendChild(meta);document.documentElement.style.webkitTextSizeAdjust="100%";document.documentElement.style.background=${JSON.stringify(PAPER_CANVAS)};document.documentElement.style.touchAction="manipulation"});
 addEventListener("message",function(e){var d=e.data;if(!d||d.type!==${JSON.stringify(PAPER_FRAME_SIZE_MESSAGE)}||!(d.width>0))return;
-var root=document.body.firstElementChild;if(root){root.style.width=d.width+"px";root.style.margin="0 auto"}
-meta.content=d.width>screen.width?"width="+d.width+",maximum-scale=6":"width=device-width,initial-scale=1,maximum-scale=6";
-post({type:"ready"});
+var W=screen.width,shown=Math.min(W-32,d.width),vw=W*d.width/shown,s=W/vw;
+var root=document.body.firstElementChild;if(root){root.style.width=d.width+"px";root.style.flexShrink="0"}
+var b=document.body.style;b.margin="0";b.background=${JSON.stringify(PAPER_CANVAS)};b.display="flex";b.alignItems="center";b.justifyContent="center";b.boxSizing="border-box";b.minHeight="100vh";b.paddingTop=(${insetTop}/s)+"px";b.paddingBottom=(${insetBottom}/s)+"px";
+meta.content="width="+vw+",minimum-scale="+s+",maximum-scale="+Math.max(4,s*8);
+post({type:"ready",width:d.width,height:d.height,scale:s});
 setTimeout(function(){if(window.visualViewport)base=visualViewport.scale},300)});
 var sx=0,sy=0;addEventListener("touchstart",function(e){if(e.touches.length===1){sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{passive:true});
 addEventListener("touchend",function(e){var t=e.changedTouches[0],dx=t.clientX-sx,dy=t.clientY-sy;if(!zoomed&&e.touches.length===0&&Math.abs(dx)*screen.width/innerWidth>60&&Math.abs(dx)>2*Math.abs(dy))post({type:"swipe",direction:dx<0?1:-1})},{passive:true});
-var zoomed=false,base=0;if(window.visualViewport)visualViewport.addEventListener("resize",function(){if(!base)return;var z=visualViewport.scale>base*1.01;if(z!==zoomed){zoomed=z;post({type:"zoom",zoomed:z})}});
+var zoomed=false,base=0,last=0,lastTap=0;
+addEventListener("touchend",function(e){var t=e.changedTouches[0];if(e.touches.length!==0||!t||Math.abs(t.clientX-sx)>10||Math.abs(t.clientY-sy)>10)return;var now=Date.now();if(now-lastTap<350){e.preventDefault();lastTap=0;if(zoomed)post({type:"fit"})}else lastTap=now},{passive:false});
+if(window.visualViewport)visualViewport.addEventListener("resize",function(){if(!base)return;var v=visualViewport.scale;if(Math.abs(v-last)<last*0.01)return;last=v;zoomed=v>base*1.01;post({type:"zoom",zoomed:zoomed,scale:v})});
 })();true;`;
 
+interface BridgeMessage {
+  readonly type?: unknown;
+  readonly zoomed?: unknown;
+  readonly direction?: unknown;
+  readonly width?: unknown;
+  readonly height?: unknown;
+  readonly scale?: unknown;
+}
+
+const PAPER_CANVAS = "#181818";
+const num = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
 /** Only the bridge script posts here; anything that is not its JSON is ignored. */
-function readBridgeMessage(
-  data: string,
-): { type?: unknown; zoomed?: unknown; direction?: unknown } | null {
+function readBridgeMessage(data: string): BridgeMessage | null {
   try {
-    return JSON.parse(data) as { type?: unknown; zoomed?: unknown; direction?: unknown };
+    return JSON.parse(data) as BridgeMessage;
   } catch {
     return null;
   }
@@ -41,8 +57,15 @@ function readBridgeMessage(
 export function PaperLiveFrame(props: {
   readonly environmentId: EnvironmentId;
   readonly frame: PaperViewerFrame;
-  readonly onReady: () => void;
-  readonly onZoomedChange: (zoomed: boolean) => void;
+  /** Space the viewer's bars take at the top and bottom, in points. */
+  readonly insetTop: number;
+  readonly insetBottom: number;
+  /** The frame's size and the page scale it fits at. */
+  readonly onReady: (size: { width: number; height: number; scale: number }) => void;
+  /** Zoomed past fit, and the scale relative to the frame's real size. */
+  readonly onZoomChange: (zoomed: boolean, scale: number) => void;
+  /** A double-tap while zoomed; WebKit cannot be zoomed back from script, so the app reloads the frame. */
+  readonly onFit: () => void;
   /** The WebView keeps touches, so it reports sideways swipes for the pager. */
   readonly onSwipe: (direction: 1 | -1) => void;
   readonly visible: boolean;
@@ -75,8 +98,17 @@ export function PaperLiveFrame(props: {
   if (uri === null) return null;
   const onMessage = (event: WebViewMessageEvent) => {
     const message = readBridgeMessage(event.nativeEvent.data);
-    if (message?.type === "ready") props.onReady();
-    if (message?.type === "zoom") props.onZoomedChange(message.zoomed === true);
+    if (message?.type === "ready") {
+      const width = num(message.width);
+      const height = num(message.height);
+      const scale = num(message.scale);
+      if (width !== null && height !== null && scale !== null)
+        props.onReady({ width, height, scale });
+    }
+    if (message?.type === "zoom") {
+      props.onZoomChange(message.zoomed === true, num(message.scale) ?? 1);
+    }
+    if (message?.type === "fit") props.onFit();
     if (message?.type === "swipe") props.onSwipe(message.direction === -1 ? -1 : 1);
   };
   return (
@@ -91,8 +123,8 @@ export function PaperLiveFrame(props: {
         bottom: 0,
         opacity: props.visible ? 1 : 0,
       }}
-      style={{ backgroundColor: "transparent" }}
-      injectedJavaScriptBeforeContentLoaded={BRIDGE_SCRIPT}
+      style={{ backgroundColor: PAPER_CANVAS }}
+      injectedJavaScriptBeforeContentLoaded={bridgeScript(props.insetTop, props.insetBottom)}
       onMessage={onMessage}
       onShouldStartLoadWithRequest={(request) => request.url === uri}
       setBuiltInZoomControls
