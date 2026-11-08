@@ -15,7 +15,7 @@ import { serverEnvironment } from "~/state/server";
 import { useEnvironmentQuery } from "~/state/query";
 import { ChatMarkdownAssetImage } from "../chat/ChatMarkdownMedia";
 import { type TimelineRow, TimelineRowCtx } from "../chat/timelineRowContext";
-import { PaperFrameViewer, PaperLivePrefetch } from "./PaperFrameViewer";
+import { PaperFrameViewer, PaperLivePrefetch, usePaperLiveFrame } from "./PaperFrameViewer";
 import { PaperRain } from "./PaperRain";
 import {
   PaperThreadActivityCtx,
@@ -116,6 +116,7 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
           <ShotImage
             environmentId={environmentId}
             shot={shot}
+            live={liveEnabled}
             alt={nameOf(shot) ?? `Paper frame ${shot.nodeId}`}
             onExpand={() => setViewing({ key: shot.key, live: liveEnabled })}
           />
@@ -140,17 +141,39 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
 function ShotImage(props: {
   environmentId: EnvironmentId;
   shot: PaperShot;
+  live: boolean;
   alt: string;
   onExpand: () => void;
 }) {
+  const thumbnail = usePaperThumbnail(props.environmentId, props.shot);
+  // The same query the strip prefetches, so this costs no extra Paper call.
+  const live = usePaperLiveFrame(props.environmentId, props.shot, props.live);
+  const deleted = thumbnail.deleted || live.data?._tag === "frameDeleted";
   return (
-    <ChatMarkdownAssetImage
-      environmentId={props.environmentId}
-      resource={usePaperThumbnail(props.environmentId, props.shot)}
-      alt={props.alt}
-      style={SHOT_IMAGE_STYLE}
-      onImageExpand={props.onExpand}
-    />
+    <>
+      <ChatMarkdownAssetImage
+        environmentId={props.environmentId}
+        resource={thumbnail.resource}
+        alt={props.alt}
+        style={SHOT_IMAGE_STYLE}
+        className={deleted ? "opacity-55 grayscale" : undefined}
+        onImageExpand={props.onExpand}
+      />
+      {deleted ? (
+        <span className="pointer-events-none absolute top-1.5 left-1.5 z-10 flex items-center gap-1.5 rounded-md bg-black/80 px-2 py-1 text-xs font-medium text-warning">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path
+              d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Deleted in Paper
+        </span>
+      ) : null}
+    </>
   );
 }
 

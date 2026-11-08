@@ -127,7 +127,11 @@ export function usePaperFreshImage(
   frame: { readonly fileId: string; readonly nodeId: string },
   base: string | null,
   revision: string | null,
-): Extract<AssetResource, { readonly _tag: "attachment" }> | null {
+): {
+  readonly image: Extract<AssetResource, { readonly _tag: "attachment" }> | null;
+  /** Paper no longer has the frame; the last picture stays. */
+  readonly deleted: boolean;
+} {
   const later = revision !== null && revision !== base;
   const fetched = useEnvironmentQuery(
     later
@@ -142,19 +146,27 @@ export function usePaperFreshImage(
   if (later && attachmentId !== null && attachmentId !== latest?.attachmentId) {
     setLatest({ base, attachmentId });
   }
-  return latest !== null && latest.base === base
-    ? { _tag: "attachment", attachmentId: latest.attachmentId, disposition: "inline" }
-    : null;
+  return {
+    image:
+      latest !== null && latest.base === base
+        ? { _tag: "attachment", attachmentId: latest.attachmentId, disposition: "inline" }
+        : null,
+    deleted: later && fetched.data?._tag === "frameDeleted",
+  };
 }
 
 /** A strip thumbnail: the agent's screenshot, or a newer one after later writes. */
 export function usePaperShotThumbnail(
   environmentId: EnvironmentId,
   shot: PaperShot,
-): PaperShot["image"] | Extract<AssetResource, { readonly _tag: "attachment" }> {
+): {
+  readonly resource: PaperShot["image"] | Extract<AssetResource, { readonly _tag: "attachment" }>;
+  readonly deleted: boolean;
+} {
   const state = useAtomValue(paperThreadStateAtom);
   const { follow } = usePaperFlags(environmentId);
   const current = state.shots.find((candidate) => candidate.key === shot.key) ?? shot;
   const revision = follow ? paperLiveRevision(current, state.shots, state.activity) : null;
-  return usePaperFreshImage(environmentId, shot, shot.image.itemId, revision) ?? shot.image;
+  const fresh = usePaperFreshImage(environmentId, shot, shot.image.itemId, revision);
+  return { resource: fresh.image ?? shot.image, deleted: fresh.deleted };
 }
