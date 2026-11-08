@@ -113,3 +113,22 @@ open "t3space://window?except=eventintel,goldflower"
 
 A new window opens on the current macOS Space, so a script that switches to a
 Space and then opens its link fills that Space with the right window.
+
+## Run the fork's server on the devbox
+
+```sh
+fork/server.sh            # from the devbox: build origin/stack and switch the server to it
+```
+
+Server-side fork features (Paper) only run when the devbox server is the fork's
+build. The script builds it in a separate checkout (`../t3code-server-build`),
+names it after its base nightly with the run number past 900000
+(`0.1.8-nightly.20261107.900001`), and switches the service to it with `t3 update`
+from a feed served only for that call. The switch restarts the server, dropping
+running turns, terminals and connected apps; if the new build fails to start, it
+rolls back by itself.
+
+`t3 update` moves back to upstream and drops the fork's server features, so update
+by running this script again on the new nightly. The app builds see the fork server's
+made-up version and stay on the base the stack is on.
+The Paper Desktop command lives in `~/.config/systemd/user/t3code.service.d/paper.conf`.
