@@ -262,7 +262,7 @@ function ViewerCanvas(props: {
     src: string;
     width: number;
     height: number;
-    /** The drawing it replaced, left underneath so the fade-in never shows the old screenshot. */
+    /** The drawing it replaced, left underneath until the new one has drawn. */
     under: string | null;
   } | null>(null);
   const [imageAspect, setImageAspect] = useState<number | null>(null);
