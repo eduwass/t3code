@@ -146,6 +146,7 @@ import { useThreadFindPositionReader } from "./useThreadFindPositionReader";
 import { ThreadActivityAnnouncer } from "./ThreadActivityAnnouncer";
 import { useStableHandoffRuns, useIncrementalTimelineRows, useStableRows } from "./useTimelineRows";
 import { PaperRowShots } from "../paper/PaperRowShots";
+import { PaperThreadShotsCtx, paperThreadShots } from "../paper/paperThreadShots";
 import { useClientSettings } from "../../hooks/useSettings";
 
 function timelineListStateFor(identity: string): {
@@ -1409,6 +1410,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       return next;
     });
   });
+  const paperShots = paperThreadShots(timelineEntries);
   const renderItem = ({ item }: { item: MessagesTimelineRow }) => (
     <TimelineRowCtx value={sharedState}>
       <div
@@ -1424,7 +1426,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
           data-timeline-root="true"
         >
           <AudioPreviewUnmountContext value={onAudioUnmount}>
-            <TimelineRowContent row={item} />
+            <PaperThreadShotsCtx value={paperShots}>
+              <TimelineRowContent row={item} />
+            </PaperThreadShotsCtx>
           </AudioPreviewUnmountContext>
         </div>
       </div>
@@ -1938,6 +1942,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           className="ms-auto"
         />
       </div>
+      <PaperRowShots row={row} />
       {loading ? <WorkHistorySkeleton /> : null}
     </div>
   );
