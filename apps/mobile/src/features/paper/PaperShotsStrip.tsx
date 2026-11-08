@@ -3,7 +3,10 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { PaperShot } from "@t3tools/client-runtime/work-log/paper-tools";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { ScrollView, View } from "react-native";
+import { Image } from "expo-image";
+import { Pressable, ScrollView, View } from "react-native";
+
+import { AppText as Text } from "../../components/ui/AppText";
 
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -15,6 +18,7 @@ import {
 } from "../threads/ThreadMarkdownImage";
 
 const SHOT_WIDTH = 132;
+const PAPER_ICON = require("../../../assets/paper-icon.png");
 
 export function PaperShotsStrip(props: {
   readonly environmentId: EnvironmentId;
@@ -74,9 +78,21 @@ export function PaperShotsStrip(props: {
             <ThreadMarkdownImage
               environmentId={props.environmentId}
               resource={shot.image}
-              alt={nameOf(shot) ?? `Paper frame ${shot.nodeId}`}
+              // The caption below carries the name; the shared one has no icon and wraps.
+              alt={null}
               onPressPreview={() => open(shot.key)}
             />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={nameOf(shot) ?? `Paper frame ${shot.nodeId}`}
+              onPress={() => open(shot.key)}
+              className="flex-row items-center gap-1.5"
+            >
+              <Image source={PAPER_ICON} style={{ width: 14, height: 14, borderRadius: 3 }} />
+              <Text numberOfLines={1} className="flex-1 text-xs text-foreground-muted">
+                {nameOf(shot) ?? `Paper frame ${shot.nodeId}`}
+              </Text>
+            </Pressable>
           </View>
         ))}
       </MarkdownImageAvailableWidthContext.Provider>

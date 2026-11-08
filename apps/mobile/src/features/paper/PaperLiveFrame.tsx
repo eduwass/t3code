@@ -3,6 +3,7 @@
 // script below catches that report, fits the frame to the width and tells the app.
 import { PAPER_FRAME_SIZE_MESSAGE, type EnvironmentId } from "@t3tools/contracts";
 import { useState } from "react";
+import { View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
 import { useAssetUrlState } from "../../state/assets";
@@ -10,10 +11,10 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import type { PaperViewerFrame } from "./paperFrameViewerState";
 
-// Laid out 1440px wide like the web viewer's iframe, so boards keep their shape. Once the
-// frame reports its size, the page becomes the viewer's canvas: the frame fits the width
-// less 16pt margins (never above 100%), centered between the viewer's bars. Native page
-// zoom keeps pinch zoom sharp, and the page reports its scale for the zoom pill.
+// Laid out 1440px wide like the web iframe; once the frame reports its size, it fits the
+// width less 16pt margins (never above 100%), centered between the viewer's bars.
+// Native page zoom keeps pinch sharp. "ready" waits for WebKit to apply the new viewport,
+// so the swap from the screenshot never shows the unfitted page.
 const bridgeScript = (insetTop: number, insetBottom: number) => `(function(){
 var post=function(m){window.ReactNativeWebView.postMessage(JSON.stringify(m))};
 var meta=document.createElement("meta");meta.name="viewport";meta.content="width=1440";
@@ -23,8 +24,7 @@ var W=screen.width,shown=Math.min(W-32,d.width),vw=W*d.width/shown,s=W/vw;
 var root=document.body.firstElementChild;if(root){root.style.width=d.width+"px";root.style.flexShrink="0"}
 var b=document.body.style;b.margin="0";b.background=${JSON.stringify(PAPER_CANVAS)};b.display="flex";b.alignItems="center";b.justifyContent="center";b.boxSizing="border-box";b.minHeight="100vh";b.paddingTop=(${insetTop}/s)+"px";b.paddingBottom=(${insetBottom}/s)+"px";
 meta.content="width="+vw+",minimum-scale="+s+",maximum-scale="+Math.max(4,s*8);
-post({type:"ready",width:d.width,height:d.height,scale:s});
-setTimeout(function(){if(window.visualViewport)base=visualViewport.scale},300)});
+setTimeout(function(){if(window.visualViewport)base=visualViewport.scale;post({type:"ready",width:d.width,height:d.height,scale:s})},300)});
 var sx=0,sy=0;addEventListener("touchstart",function(e){if(e.touches.length===1){sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{passive:true});
 addEventListener("touchend",function(e){var t=e.changedTouches[0],dx=t.clientX-sx,dy=t.clientY-sy;if(!zoomed&&e.touches.length===0&&Math.abs(dx)*screen.width/innerWidth>60&&Math.abs(dx)>2*Math.abs(dy))post({type:"swipe",direction:dx<0?1:-1})},{passive:true});
 var zoomed=false,base=0,last=0,lastTap=0;
@@ -112,10 +112,9 @@ export function PaperLiveFrame(props: {
     if (message?.type === "swipe") props.onSwipe(message.direction === -1 ? -1 : 1);
   };
   return (
-    <WebView<object>
-      source={{ uri }}
-      // The WebView wraps itself in a container; that container is what has to fill the page.
-      containerStyle={{
+    <View
+      pointerEvents={props.visible ? "auto" : "none"}
+      style={{
         position: "absolute",
         top: 0,
         left: 0,
@@ -123,14 +122,18 @@ export function PaperLiveFrame(props: {
         bottom: 0,
         opacity: props.visible ? 1 : 0,
       }}
-      style={{ backgroundColor: PAPER_CANVAS }}
-      injectedJavaScriptBeforeContentLoaded={bridgeScript(props.insetTop, props.insetBottom)}
-      onMessage={onMessage}
-      onShouldStartLoadWithRequest={(request) => request.url === uri}
-      setBuiltInZoomControls
-      setDisplayZoomControls={false}
-      overScrollMode="never"
-      showsHorizontalScrollIndicator={false}
-    />
+    >
+      <WebView<object>
+        source={{ uri }}
+        style={{ backgroundColor: PAPER_CANVAS }}
+        injectedJavaScriptBeforeContentLoaded={bridgeScript(props.insetTop, props.insetBottom)}
+        onMessage={onMessage}
+        onShouldStartLoadWithRequest={(request) => request.url === uri}
+        setBuiltInZoomControls
+        setDisplayZoomControls={false}
+        overScrollMode="never"
+        showsHorizontalScrollIndicator={false}
+      />
+    </View>
   );
 }

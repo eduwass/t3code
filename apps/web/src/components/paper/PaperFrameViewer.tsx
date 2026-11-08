@@ -41,7 +41,7 @@ export function usePaperLiveFrame(environmentId: EnvironmentId, shot: PaperShot,
 }
 
 /** "just now", "4 min ago", "2 h ago", "yesterday", "3 days ago". */
-export function capturedLabel(capturedAt: number | null, now: number): string | null {
+function capturedLabel(capturedAt: number | null, now: number): string | null {
   if (capturedAt === null) return null;
   const minutes = Math.floor(Math.max(0, now - capturedAt) / 60_000);
   if (minutes < 1) return "Captured just now";
