@@ -3534,7 +3534,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       case "run-fold":
         return entry.paperShots?.length ? undefined : resolveThreadFeedFixedItemSize(entry.type);
       case "work-toggle":
-        return entry.thought ? undefined : WORK_GROUP_TOGGLE_HEIGHT;
+        return entry.thought || entry.paperShots?.length ? undefined : WORK_GROUP_TOGGLE_HEIGHT;
       case "thinking":
         return WORK_GROUP_TOGGLE_HEIGHT;
       case "activity-group":
