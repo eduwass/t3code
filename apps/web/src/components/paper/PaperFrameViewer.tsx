@@ -4,7 +4,7 @@
 import type { PaperShot } from "@t3tools/client-runtime/work-log/paper-tools";
 import { PAPER_FRAME_SIZE_MESSAGE, type EnvironmentId } from "@t3tools/contracts";
 import { ArrowUpRightIcon, MinusIcon, PlusIcon, XIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import { useAssetUrlState } from "~/assets/assetUrls";
 import { observeResize } from "~/lib/observeResize";
@@ -64,26 +64,88 @@ export function PaperFrameViewer(props: {
   const [box, setBox] = useState<{ width: number; height: number } | null>(null);
   const [zoomFactor, setZoomFactor] = useState(1);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  // Fit the width, never upscale; long pages and phone frames scroll down instead of shrinking.
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  // The content point under the cursor when a zoom started, kept under the cursor after it.
+  const zoomAnchor = useRef<{ x: number; y: number; fx: number; fy: number } | null>(null);
+  // Live frames fit the width and never upscale; the screenshot is laid out at the fitted width.
   const fit = frame === null || box === null ? 1 : Math.min(1, (box.width - 32) / frame.width);
   const zoom = clampZoom(fit * zoomFactor);
 
+  const zoomBy = (factor: number, at?: { clientX: number; clientY: number }) => {
+    const viewport = viewportRef.current;
+    const content = contentRef.current;
+    if (viewport !== null && content !== null) {
+      const view = viewport.getBoundingClientRect();
+      const rect = content.getBoundingClientRect();
+      const x = at?.clientX ?? view.left + view.width / 2;
+      const y = at?.clientY ?? view.top + view.height / 2;
+      zoomAnchor.current = {
+        x,
+        y,
+        fx: (x - rect.left) / rect.width,
+        fy: (y - rect.top) / rect.height,
+      };
+    }
+    setZoomFactor((value) => clampZoom(fit * value * factor) / fit);
+  };
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the DOM so the zoom stays anchored at the cursor
+  useLayoutEffect(() => {
+    const anchor = zoomAnchor.current;
+    const viewport = viewportRef.current;
+    const content = contentRef.current;
+    zoomAnchor.current = null;
+    if (anchor === null || viewport === null || content === null) return;
+    const rect = content.getBoundingClientRect();
+    viewport.scrollLeft += rect.left + anchor.fx * rect.width - anchor.x;
+    viewport.scrollTop += rect.top + anchor.fy * rect.height - anchor.y;
+  });
+
   const observeViewport = (viewport: HTMLDivElement | null) => {
+    viewportRef.current = viewport;
     if (viewport === null) return;
     setBox({ width: viewport.clientWidth, height: viewport.clientHeight });
     const stopResize = observeResize(viewport, ([entry]) => {
       if (entry) setBox({ width: entry.contentRect.width, height: entry.contentRect.height });
     });
-    // Pinch and ctrl/cmd+wheel zoom the frame; React's wheel listener is passive and cannot stop page zoom.
+    // Scrolling pans natively; a pinch (ctrlKey) or cmd/ctrl+wheel zooms. React's wheel
+    // listener is passive and cannot stop the page zooming instead.
     const wheel = (event: WheelEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
-      setZoomFactor((value) => value * Math.exp(-event.deltaY * 0.01));
+      zoomBy(Math.exp(-event.deltaY * 0.01), event);
+    };
+    let drag: { x: number; y: number; id: number } | null = null;
+    const down = (event: PointerEvent) => {
+      if (event.button !== 0 || event.pointerType !== "mouse") return;
+      drag = { x: event.clientX, y: event.clientY, id: event.pointerId };
+      viewport.setPointerCapture(event.pointerId);
+      viewport.style.cursor = "grabbing";
+    };
+    const move = (event: PointerEvent) => {
+      if (drag?.id !== event.pointerId) return;
+      viewport.scrollLeft -= event.clientX - drag.x;
+      viewport.scrollTop -= event.clientY - drag.y;
+      drag = { ...drag, x: event.clientX, y: event.clientY };
+    };
+    const up = (event: PointerEvent) => {
+      if (drag?.id !== event.pointerId) return;
+      drag = null;
+      viewport.style.cursor = "";
     };
     viewport.addEventListener("wheel", wheel, { passive: false });
+    viewport.addEventListener("pointerdown", down);
+    viewport.addEventListener("pointermove", move);
+    viewport.addEventListener("pointerup", up);
+    viewport.addEventListener("pointercancel", up);
     return () => {
       stopResize();
       viewport.removeEventListener("wheel", wheel);
+      viewport.removeEventListener("pointerdown", down);
+      viewport.removeEventListener("pointermove", move);
+      viewport.removeEventListener("pointerup", up);
+      viewport.removeEventListener("pointercancel", up);
     };
   };
 
@@ -131,12 +193,15 @@ export function PaperFrameViewer(props: {
           </Button>
           <div
             ref={observeViewport}
-            className="relative flex h-[min(86vh,calc(100vh-160px))] overflow-auto scrollbar-gutter-both overscroll-contain rounded-lg bg-background p-4 shadow-2xl ring-1 ring-border/70"
+            className="relative flex h-[min(86vh,calc(100vh-160px))] cursor-grab overflow-auto scrollbar-gutter-both overscroll-contain rounded-lg bg-background p-4 shadow-2xl ring-1 ring-border/70"
           >
             {src !== null ? (
               <div
+                ref={frame === null ? undefined : contentRef}
                 className={
-                  frame === null ? "pointer-events-none absolute opacity-0" : "m-auto shrink-0"
+                  frame === null
+                    ? "pointer-events-none absolute opacity-0"
+                    : "relative m-auto shrink-0"
                 }
                 style={frame === null ? undefined : { zoom }}
               >
@@ -152,15 +217,19 @@ export function PaperFrameViewer(props: {
                     height: measured?.height ?? (liveData?.height || 900),
                   }}
                 />
+                {/* Keeps wheel, pinch and drag with the viewer; the iframe would swallow them. */}
+                <div className="absolute inset-0" />
               </div>
             ) : null}
             {frame === null ? (
-              <div className="m-auto">
+              <div ref={contentRef} className="m-auto shrink-0" style={{ zoom }}>
                 <ChatMarkdownAssetImage
                   environmentId={props.environmentId}
                   resource={props.shot.image}
                   alt={props.name ?? `Paper frame ${props.shot.nodeId}`}
-                  style={SCREENSHOT_STYLE}
+                  style={
+                    box === null ? SCREENSHOT_STYLE : { width: box.width - 32, height: "auto" }
+                  }
                 />
               </div>
             ) : null}
@@ -169,34 +238,27 @@ export function PaperFrameViewer(props: {
             <span className="truncate">
               {props.name ?? props.shot.nodeId} · {status}
             </span>
-            {frame !== null ? (
-              <div className="flex shrink-0 items-center gap-1">
-                <Button
-                  aria-label="Zoom out"
-                  size="icon-sm"
-                  variant="overlay"
-                  onClick={() => setZoomFactor((value) => value / 1.25)}
-                >
-                  <MinusIcon />
-                </Button>
-                <Button
-                  aria-label="Fit"
-                  size="sm"
-                  variant="overlay"
-                  onClick={() => setZoomFactor(1)}
-                >
-                  {Math.round(zoom * 100)}%
-                </Button>
-                <Button
-                  aria-label="Zoom in"
-                  size="icon-sm"
-                  variant="overlay"
-                  onClick={() => setZoomFactor((value) => value * 1.25)}
-                >
-                  <PlusIcon />
-                </Button>
-              </div>
-            ) : null}
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                aria-label="Zoom out"
+                size="icon-sm"
+                variant="overlay"
+                onClick={() => zoomBy(1 / 1.25)}
+              >
+                <MinusIcon />
+              </Button>
+              <Button aria-label="Fit" size="sm" variant="overlay" onClick={() => setZoomFactor(1)}>
+                {Math.round(zoom * 100)}%
+              </Button>
+              <Button
+                aria-label="Zoom in"
+                size="icon-sm"
+                variant="overlay"
+                onClick={() => zoomBy(1.25)}
+              >
+                <PlusIcon />
+              </Button>
+            </div>
             <a
               href={props.shot.url}
               target="_blank"
