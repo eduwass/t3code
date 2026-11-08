@@ -66,8 +66,12 @@ export const PaperRequest = Schema.Union([
     frames: Schema.Array(PaperFrameRef).check(Schema.isMaxLength(64)),
   }),
   Schema.TaggedStruct("listFrames", { fileId: PaperId }),
-  /** A small screenshot, for frames the thread has no screenshot of. */
-  Schema.TaggedStruct("frameImage", { fileId: PaperId, nodeId: PaperId }),
+  /** A small screenshot, for frames the thread has none of, or a newer one after later writes. */
+  Schema.TaggedStruct("frameImage", {
+    fileId: PaperId,
+    nodeId: PaperId,
+    revision: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
+  }),
   /** `revision` names the screenshot the frame came from, so a newer drawing is fetched again. */
   Schema.TaggedStruct("liveFrame", {
     fileId: PaperId,

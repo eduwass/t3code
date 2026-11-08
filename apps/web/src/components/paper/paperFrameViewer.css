@@ -227,6 +227,8 @@
   top: 0;
   left: 0;
   transform-origin: 0 0;
+  /* A shrinking drawing must not show the previous one past its edge. */
+  overflow: clip;
   box-shadow:
     0 18px 50px rgb(0 0 0 / 0.5),
     0 0 0 1px rgb(255 255 255 / 0.05);
@@ -347,4 +349,16 @@
   [data-pfv="hint"] {
     display: none;
   }
+}
+
+/* T3 Space fork: the frame the agent is drawing right now. */
+[data-pfv="row-live"],
+[data-pfv="label-name"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+[data-pfv="row-live"] {
+  color: oklch(0.78 0.11 258);
 }
