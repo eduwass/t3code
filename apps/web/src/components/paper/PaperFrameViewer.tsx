@@ -294,6 +294,8 @@ function ViewerCanvas(props: {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const labelRef = useRef<HTMLDivElement | null>(null);
   const zoomTextRef = useRef<HTMLSpanElement | null>(null);
+  // In a ref: pressing re-renders the dialog, which re-attaches the listeners mid-drag.
+  const drag = useRef<{ x: number; y: number; id: number } | null>(null);
 
   const fitView = () => {
     const bw = box?.width ?? 960;
@@ -368,28 +370,28 @@ function ViewerCanvas(props: {
         fitted: false,
       });
     };
-    let drag: { x: number; y: number; id: number } | null = null;
     const down = (event: PointerEvent) => {
       if (event.button !== 0) return;
       event.preventDefault();
-      drag = { x: event.clientX, y: event.clientY, id: event.pointerId };
+      drag.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
       viewport.setPointerCapture(event.pointerId);
       viewport.style.cursor = "grabbing";
     };
     const move = (event: PointerEvent) => {
-      if (drag?.id !== event.pointerId) return;
+      const from = drag.current;
+      if (from?.id !== event.pointerId) return;
       const current = view.current;
       apply({
         ...current,
-        x: current.x + event.clientX - drag.x,
-        y: current.y + event.clientY - drag.y,
+        x: current.x + event.clientX - from.x,
+        y: current.y + event.clientY - from.y,
         fitted: false,
       });
-      drag = { ...drag, x: event.clientX, y: event.clientY };
+      drag.current = { ...from, x: event.clientX, y: event.clientY };
     };
     const up = (event: PointerEvent) => {
-      if (drag?.id !== event.pointerId) return;
-      drag = null;
+      if (drag.current?.id !== event.pointerId) return;
+      drag.current = null;
       viewport.style.cursor = "";
     };
     viewport.addEventListener("wheel", wheel, { passive: false });
