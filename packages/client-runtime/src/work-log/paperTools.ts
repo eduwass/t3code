@@ -4,6 +4,7 @@ import type {
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 
 // T3 Space fork. Paper MCP calls arrive as `mcp__paper__<tool>` from Claude and
 // `paper.<tool>` from Codex.
@@ -19,6 +20,8 @@ export interface PaperToolCall {
   readonly toolName: string | null | undefined;
   readonly status: string;
   readonly input: unknown;
+  /** Epoch ms the call finished, when known. */
+  readonly completedAt?: number | null;
 }
 
 export interface PaperShot {
@@ -27,6 +30,8 @@ export interface PaperShot {
   readonly nodeId: string;
   readonly url: string;
   readonly image: Extract<AssetResource, { readonly _tag: "tool-output-image" }>;
+  /** When the agent last captured the frame (epoch ms). Paper has no per-frame edit time. */
+  readonly capturedAt: number | null;
 }
 
 function stringField(input: unknown, field: string): string | null {
@@ -65,9 +70,15 @@ export function paperShots(calls: Iterable<PaperToolCall>): ReadonlyArray<PaperS
         itemId: call.itemId,
         index: 0,
       },
+      capturedAt: call.completedAt ?? null,
     };
     // Re-setting an existing key keeps its first position in the Map.
-    shots.set(key, existing === undefined ? shot : { ...existing, image: shot.image });
+    shots.set(
+      key,
+      existing === undefined
+        ? shot
+        : { ...existing, image: shot.image, capturedAt: shot.capturedAt ?? existing.capturedAt },
+    );
   }
   return [...shots.values()];
 }
@@ -78,13 +89,15 @@ export function paperShotsFromProjectedItems(
 ): ReadonlyArray<PaperShot> {
   const calls: PaperToolCall[] = [];
   for (const row of rows) {
-    if (row?.item.type !== "dynamic_tool") continue;
+    if (row?.item.type !== "dynamic_tool" || paperToolName(row.item.toolName) === null) continue;
+    const finishedAt = row.item.completedAt ?? row.item.updatedAt;
     calls.push({
       threadId: row.sourceThreadId,
       itemId: row.sourceItemId,
       toolName: row.item.toolName,
       status: row.item.status,
       input: row.item.input,
+      completedAt: finishedAt ? DateTime.toEpochMillis(finishedAt) : null,
     });
   }
   return paperShots(calls);
