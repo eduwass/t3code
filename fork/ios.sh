@@ -58,6 +58,10 @@ server_tag() {
   [ -n "$pid" ] || die "no T3 server is listening on port $port"
   tag=$(tr '\0' '\n' </proc/"$pid"/cmdline | sed -n 's|.*/versions/\([^/]*\)/t3$|v\1|p' | head -1)
   [ -n "$tag" ] || die "cannot read the version of the server on port $port (pid $pid)"
+  # A fork server (fork/server.sh) has no tag of its own; it records the nightly it was built on.
+  if [[ $tag =~ \.([0-9]+)$ ]] && ((BASH_REMATCH[1] > 900000)); then
+    tag=$(git config fork-server.base) || die "fork server $tag has no recorded base"
+  fi
   echo "$tag"
 }
 
