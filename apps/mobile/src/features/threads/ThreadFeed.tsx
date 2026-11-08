@@ -144,6 +144,7 @@ import { messageImageGallery } from "./messageImageGallery";
 import { MARKDOWN_IMAGE_MAX_WIDTH, resolveMarkdownImageDisplaySize } from "./markdownImageSize";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
 import { PaperShotsStrip } from "../paper/PaperShotsStrip";
+import { PaperThreadShotsSync } from "../paper/paperThreadShots";
 import { inlineFilePreviewKind, isPdfFile } from "../../lib/filePreview";
 import { ThreadInlineFilePreview } from "./ThreadInlineFilePreview";
 import { flattenThemeColor } from "../../lib/mobileTheme";
@@ -3855,6 +3856,7 @@ export const ThreadFeed = memo(function ThreadFeed({
         style={settledPaneWidth !== null ? { width: settledPaneWidth } : undefined}
         onLayout={handleViewportLayout}
       >
+        <PaperThreadShotsSync rows={groupedFeed} />
         <View className="flex-1">
           {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- ThreadFeedScrollView is passed through the iOS-only spread below; the prop rejects undefined. */}
           <KeyboardAwareLegendList
