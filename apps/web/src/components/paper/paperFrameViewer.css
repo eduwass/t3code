@@ -12,7 +12,6 @@
   --pfv-hover: #2e2e2e;
   --pfv-selected: #2a2a2a;
   --pfv-accent: #2f6bff;
-  --pfv-live: #3ddc84;
   display: flex;
   flex-direction: column;
   width: min(94vw, 1680px);
@@ -61,27 +60,6 @@
   flex-shrink: 0;
   align-items: center;
   gap: 8px;
-}
-[data-pfv="status"] {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 8px;
-  color: var(--pfv-muted);
-  font-size: 12px;
-  line-height: 16px;
-  white-space: nowrap;
-}
-[data-pfv="dot"] {
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  border-radius: 3px;
-  background: var(--pfv-faint);
-}
-[data-pfv="dot"][data-live] {
-  background: var(--pfv-live);
 }
 [data-pfv="open"] {
   display: flex;

@@ -2,12 +2,7 @@
 // the T3 Space × Paper file). Opens on the screenshot the thread already has, then swaps to
 // the frame rendered as HTML once the server has it, so text stays sharp when zoomed.
 import type { PaperShot } from "@t3tools/client-runtime/work-log/paper-tools";
-import {
-  PAPER_FRAME_SIZE_MESSAGE,
-  type EnvironmentId,
-  type PaperConnectionStatus,
-  type PaperFrame,
-} from "@t3tools/contracts";
+import { PAPER_FRAME_SIZE_MESSAGE, type EnvironmentId, type PaperFrame } from "@t3tools/contracts";
 import { isMacPlatform } from "@t3tools/shared/keybindings";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -57,11 +52,6 @@ export function capturedLabel(capturedAt: number | null, now: number): string | 
   return days === 1 ? "Captured yesterday" : `Captured ${days} days ago`;
 }
 
-const connectionLabel = (connections: ReadonlyArray<PaperConnectionStatus> | undefined) => {
-  const inUse = connections?.find((connection) => connection.state === "in-use");
-  return inUse === undefined ? null : inUse.kind === "desktop" ? "Desktop" : "Account";
-};
-
 export function PaperFrameViewer(props: {
   readonly environmentId: EnvironmentId;
   /** The frames in the rail, in rail order. */
@@ -96,14 +86,6 @@ export function PaperFrameViewer(props: {
           input: { _tag: "listFrames", fileId: shot.fileId },
         }),
   );
-  const connections = useEnvironmentQuery(
-    props.live
-      ? serverEnvironment.paper({
-          environmentId: props.environmentId,
-          input: { _tag: "connections" },
-        })
-      : null,
-  );
   const frameOf = (target: PaperShot): PaperFrame | null =>
     names.data?._tag === "frameNames"
       ? (names.data.frames.find(
@@ -112,8 +94,6 @@ export function PaperFrameViewer(props: {
       : null;
   const nameOf = (target: PaperShot) => frameOf(target)?.name ?? "Paper frame";
   const fileName = file.data?._tag === "listFrames" ? file.data.fileName : null;
-  const via =
-    connections.data?._tag === "connections" ? connectionLabel(connections.data.connections) : null;
   const go = (delta: number) => {
     const next = props.shots[index + delta];
     if (next !== undefined) setCurrentKey(next.key);
@@ -148,12 +128,6 @@ export function PaperFrameViewer(props: {
               <span>{fileName ?? "Paper"}</span>
             </div>
             <div data-pfv="actions">
-              <ViewerStatus
-                environmentId={props.environmentId}
-                shot={shot}
-                live={props.live}
-                via={via}
-              />
               <a data-pfv="open" href={shot.url} target="_blank" rel="noreferrer">
                 <img src={PAPER_ICON} alt="" aria-hidden width={16} height={16} />
                 Open in Paper
@@ -218,31 +192,6 @@ export function PaperFrameViewer(props: {
         </div>
       </DialogPopup>
     </Dialog>
-  );
-}
-
-function ViewerStatus(props: {
-  readonly environmentId: EnvironmentId;
-  readonly shot: PaperShot;
-  readonly live: boolean;
-  readonly via: string | null;
-}) {
-  const live = usePaperLiveFrame(props.environmentId, props.shot, props.live);
-  const ready = live.data?._tag === "liveFrame";
-  const label = !props.live
-    ? "Screenshot"
-    : ready
-      ? props.via === null
-        ? "Live"
-        : `Live · ${props.via}`
-      : live.error !== null
-        ? "Screenshot · live frame unavailable"
-        : "Loading live frame…";
-  return (
-    <div data-pfv="status">
-      <div data-pfv="dot" data-live={ready ? "" : undefined} />
-      {label}
-    </div>
   );
 }
 
