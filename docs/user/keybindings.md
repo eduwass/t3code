@@ -51,6 +51,12 @@ on macOS and Ctrl on Windows and Linux, including GNOME, KDE Plasma, Niri, and
 Hyprland. If a custom desktop shortcut takes the same keys, choose another binding
 in Settings.
 
+## Pull requests
+
+`mod+p` opens the Pull requests page, or type **Open pull requests** in the
+command palette. The file picker has no default shortcut; reach it with `mod+k`
+(search **open file**), or bind **File Picker: Toggle** in Settings.
+
 ## Copy pull request references
 
 With a PR open in the right panel or on the Pull requests page, use `mod+shift+c`
