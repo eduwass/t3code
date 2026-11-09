@@ -31,7 +31,8 @@ export interface PaperShot {
   readonly fileId: string;
   readonly nodeId: string;
   readonly url: string;
-  readonly image: Extract<AssetResource, { readonly _tag: "tool-output-image" }>;
+  /** Null for the artboard the agent is drawing before it has screenshotted it. */
+  readonly image: Extract<AssetResource, { readonly _tag: "tool-output-image" }> | null;
   /** When the agent last captured the frame (epoch ms). Paper has no per-frame edit time. */
   readonly capturedAt: number | null;
 }
@@ -109,6 +110,8 @@ export interface PaperActivity {
   readonly lastWrite: TurnItemId | null;
   /** The run of the newest write; a later run that never touched Paper is not drawing. */
   readonly lastWriteRunId: string | null;
+  /** The node of the newest write since that release; Paper knows its artboard. */
+  readonly drawing: { readonly fileId: string; readonly nodeId: string } | null;
 }
 
 function writeTargets(input: unknown): ReadonlyArray<string> {
@@ -139,6 +142,7 @@ export function paperActivity(calls: Iterable<PaperToolCall>): PaperActivity {
   let holding = false;
   let lastWrite: TurnItemId | null = null;
   let lastWriteRunId: string | null = null;
+  let drawing: PaperActivity["drawing"] = null;
   const targets = new Set<string>();
   const written = new Set<string>();
   for (const call of calls) {
@@ -146,6 +150,7 @@ export function paperActivity(calls: Iterable<PaperToolCall>): PaperActivity {
     // ponytail: a release of some artboards ends the whole hold; agents almost always release all.
     if (tool === "finish_working_on_nodes") {
       holding = false;
+      drawing = null;
       targets.clear();
       continue;
     }
@@ -153,12 +158,23 @@ export function paperActivity(calls: Iterable<PaperToolCall>): PaperActivity {
     holding = true;
     lastWrite = call.itemId;
     lastWriteRunId = call.runId ?? null;
-    for (const id of writeTargets(call.input)) {
+    const ids = writeTargets(call.input);
+    for (const id of ids) {
       targets.add(id);
       written.add(id);
     }
+    const fileId = stringField(call.input, "fileId");
+    const nodeId = ids.at(-1);
+    if (fileId !== null && nodeId !== undefined) drawing = { fileId, nodeId };
   }
-  return { holding, targets: [...targets], written: [...written], lastWrite, lastWriteRunId };
+  return {
+    holding,
+    targets: [...targets],
+    written: [...written],
+    lastWrite,
+    lastWriteRunId,
+    drawing,
+  };
 }
 
 function newestShot(shots: ReadonlyArray<PaperShot>): PaperShot | undefined {
@@ -176,18 +192,42 @@ export function paperDrawingInRun(activity: PaperActivity | null, runId: string 
 }
 
 /**
- * The frame the agent is drawing: one it wrote to directly, else its newest capture.
- * Paper writes usually name a child node, and only Paper knows that node's artboard.
+ * The frame the agent is drawing: the artboard Paper said it writes in, else one it wrote to
+ * directly, else its newest capture. Paper writes usually name a child node.
  */
 export function paperDrawingKey(
   shots: ReadonlyArray<PaperShot>,
   activity: PaperActivity,
+  artboardKey: string | null = null,
 ): string | null {
   if (!activity.holding) return null;
   return (
-    (shots.find((shot) => activity.targets.includes(shot.nodeId)) ?? newestShot(shots))?.key ?? null
+    artboardKey ??
+    (shots.find((shot) => activity.targets.includes(shot.nodeId)) ?? newestShot(shots))?.key ??
+    null
   );
 }
+
+/** A frame for the artboard being drawn, until the agent screenshots it. */
+export function paperDrawingShot(
+  shots: ReadonlyArray<PaperShot>,
+  fileId: string,
+  artboardId: string,
+): PaperShot | null {
+  const key = `${fileId}/${artboardId}`;
+  if (shots.some((shot) => shot.key === key)) return null;
+  return {
+    key,
+    fileId,
+    nodeId: artboardId,
+    url: paperNodeUrl(fileId, artboardId),
+    image: null,
+    capturedAt: null,
+  };
+}
+
+/** Names the picture a frame started from: its screenshot, or none yet for one being drawn. */
+export const paperShotBase = (shot: PaperShot): string => shot.image?.itemId ?? "drawing";
 
 /** Names the drawing a live frame shows; it changes on a new screenshot or a later write. */
 export function paperLiveRevision(
@@ -195,9 +235,13 @@ export function paperLiveRevision(
   shots: ReadonlyArray<PaperShot>,
   activity: PaperActivity | null,
 ): string {
-  if (activity === null || activity.lastWrite === null) return shot.image.itemId;
-  const touched = activity.written.includes(shot.nodeId) || newestShot(shots)?.key === shot.key;
-  return touched ? `${shot.image.itemId}+${activity.lastWrite}` : shot.image.itemId;
+  const base = paperShotBase(shot);
+  if (activity === null || activity.lastWrite === null) return base;
+  const touched =
+    shot.image === null ||
+    activity.written.includes(shot.nodeId) ||
+    newestShot(shots)?.key === shot.key;
+  return touched ? `${base}+${activity.lastWrite}` : base;
 }
 
 function paperCallsFromProjectedItems(
@@ -235,5 +279,5 @@ export function paperActivityFromProjectedItems(
 
 /** Cheap identity for memo checks on rows that carry shots. */
 export function paperShotsKey(shots: ReadonlyArray<PaperShot> | undefined): string {
-  return shots?.map((shot) => `${shot.key}@${shot.image.itemId}`).join("|") ?? "";
+  return shots?.map((shot) => `${shot.key}@${paperShotBase(shot)}`).join("|") ?? "";
 }

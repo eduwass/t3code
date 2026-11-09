@@ -5,7 +5,9 @@ import {
   paperActivityFromProjectedItems,
   paperDrawingInRun,
   paperDrawingKey,
+  paperDrawingShot,
   paperLiveRevision,
+  paperShotBase,
   type PaperActivity,
   type PaperShot,
 } from "@t3tools/client-runtime/work-log/paper-tools";
@@ -26,12 +28,18 @@ interface PaperThreadState {
   readonly activity: PaperActivity | null;
   /** The running run is the one holding an artboard in Paper. */
   readonly working: boolean;
+  /** The artboard being drawn, from Paper, as a frame key. */
+  readonly artboardKey: string | null;
+  /** That artboard, while the agent has not screenshotted it yet; also first in `shots`. */
+  readonly drawingShot: PaperShot | null;
 }
 
 const paperThreadStateAtom = Atom.make<PaperThreadState>({
   shots: [],
   activity: null,
   working: false,
+  artboardKey: null,
+  drawingShot: null,
 }).pipe(Atom.keepAlive);
 
 /** The frames of the thread on screen, read when a strip opens the viewer. */
@@ -47,24 +55,47 @@ export function PaperThreadShotsSync(props: {
   /** The thread's running run, if any. */
   readonly runId: string | null;
 }) {
-  const shots = paperThreadShots(props.rows);
+  const feedShots = paperThreadShots(props.rows);
   const activity = paperActivityFromProjectedItems(
     props.feed.flatMap((entry) =>
       entry.type === "activity-group" ? entry.activities.map((a) => a.projectedItem) : [],
     ),
   );
   const working = paperDrawingInRun(activity, props.runId);
+  const { indicator, follow } = usePaperFlags(props.environmentId);
+  const node = indicator && working ? activity.drawing : null;
+  const artboard = useEnvironmentQuery(
+    node === null
+      ? null
+      : serverEnvironment.paper({
+          environmentId: props.environmentId,
+          input: { _tag: "artboardOf", ...node },
+        }),
+  );
+  const artboardId =
+    node !== null && artboard.data?._tag === "artboardOf" ? artboard.data.nodeId : null;
+  const artboardKey = node !== null && artboardId !== null ? `${node.fileId}/${artboardId}` : null;
+  const drawingShot =
+    node !== null && artboardId !== null
+      ? paperDrawingShot(feedShots, node.fileId, artboardId)
+      : null;
+  const shots = drawingShot === null ? feedShots : [drawingShot, ...feedShots];
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the feed's frames to the viewer, which opens from an app-root modal
   useEffect(() => {
-    appAtomRegistry.set(paperThreadStateAtom, { shots, activity, working });
-  }, [shots, activity, working]);
+    appAtomRegistry.set(paperThreadStateAtom, {
+      shots,
+      activity,
+      working,
+      artboardKey,
+      drawingShot,
+    });
+  }, [shots, activity, working, artboardKey, drawingShot]);
   // The newest frames are the ones opened next; their live HTML loads ahead of the tap.
   const settings = useAtomValue(serverEnvironment.settingsValueAtom(props.environmentId));
   const prefetch =
     settings?.paperIntegrationEnabled === true && settings.paperLiveFramesEnabled === true;
-  const { follow } = usePaperFlags(props.environmentId);
   const revisionOf = (shot: PaperShot) =>
-    follow ? paperLiveRevision(shot, shots, activity) : shot.image.itemId;
+    follow || shot.image === null ? paperLiveRevision(shot, shots, activity) : paperShotBase(shot);
   const newest = prefetch ? shots.slice(0, PREFETCH_FRAMES) : [];
   return newest.map((shot) => (
     <PaperLivePrefetch
@@ -101,8 +132,13 @@ export function usePaperDrawingKey(environmentId: EnvironmentId): string | null 
   const state = useAtomValue(paperThreadStateAtom);
   const { indicator } = usePaperFlags(environmentId);
   return indicator && state.working && state.activity !== null
-    ? paperDrawingKey(state.shots, state.activity)
+    ? paperDrawingKey(state.shots, state.activity, state.artboardKey)
     : null;
+}
+
+/** The artboard being drawn, until the agent screenshots it. */
+export function usePaperDrawingShot(): PaperShot | null {
+  return useAtomValue(paperThreadStateAtom).drawingShot;
 }
 
 /** Which drawing a viewer frame shows; later writes count when following edits is on. */
@@ -113,7 +149,7 @@ export function usePaperFrameRevision(
   const state = useAtomValue(paperThreadStateAtom);
   const { follow } = usePaperFlags(environmentId);
   const shot = state.shots.find((candidate) => candidate.key === frame.key);
-  return follow && shot !== undefined
+  return shot !== undefined && (follow || shot.image === null)
     ? paperLiveRevision(shot, state.shots, state.activity)
     : frame.revision;
 }
@@ -160,13 +196,15 @@ export function usePaperShotThumbnail(
   environmentId: EnvironmentId,
   shot: PaperShot,
 ): {
+  /** Null while a frame being drawn waits for its first picture. */
   readonly resource: PaperShot["image"] | Extract<AssetResource, { readonly _tag: "attachment" }>;
   readonly deleted: boolean;
 } {
   const state = useAtomValue(paperThreadStateAtom);
   const { follow } = usePaperFlags(environmentId);
   const current = state.shots.find((candidate) => candidate.key === shot.key) ?? shot;
-  const revision = follow ? paperLiveRevision(current, state.shots, state.activity) : null;
-  const fresh = usePaperFreshImage(environmentId, shot, shot.image.itemId, revision);
+  const revision =
+    follow || shot.image === null ? paperLiveRevision(current, state.shots, state.activity) : null;
+  const fresh = usePaperFreshImage(environmentId, shot, paperShotBase(shot), revision);
   return { resource: fresh.image ?? shot.image, deleted: fresh.deleted };
 }
