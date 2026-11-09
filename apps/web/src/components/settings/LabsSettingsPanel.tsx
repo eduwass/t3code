@@ -11,6 +11,7 @@ import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
 import { PaperIntegrationRow } from "./PaperIntegrationRow";
+import { CodeThemesLabsRow } from "../../codeThemes/CodeThemeSettings";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
 import { firstManagedDenial, usePrimaryManagedPolicy } from "~/state/managedPolicy";
@@ -29,6 +30,7 @@ export function LabsSettingsPanel() {
         <SimlockHostsRow />
         <FastWorktreeCheckoutRow />
         <PaperIntegrationRow />
+        <CodeThemesLabsRow />
       </SettingsSection>
     </SettingsPageContainer>
   );

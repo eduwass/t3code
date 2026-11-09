@@ -1,0 +1,62 @@
+{
+  "name": "alabaster-dark",
+  "displayName": "Alabaster Dark",
+  "type": "dark",
+  "source": "https://open-vsx.org/extension/lao-liang/alabaster-dark",
+  "license": "MIT",
+  "colors": {
+    "editor.background": "#21252B",
+    "editor.foreground": "#ABB2BF",
+    "editor.lineHighlightBackground": "#A9B2C31A",
+    "editor.selectionBackground": "#A9B2C31A",
+    "editorLineNumber.foreground": "#5F6672"
+  },
+  "tokenColors": [
+    {
+      "name": "Comments",
+      "scope": ["comment", "punctuation.definition.comment"],
+      "settings": { "foreground": "#E06C75" }
+    },
+    {
+      "name": "Strings",
+      "scope": ["string", "string.regexp", "constant.other.symbol"],
+      "settings": { "foreground": "#98C379" }
+    },
+    {
+      "name": "Strings: Escape Sequences",
+      "scope": "constant.character.escape",
+      "settings": { "foreground": "#737C8C" }
+    },
+    {
+      "name": "Numbers, Characters",
+      "scope": ["constant.numeric", "constant.character", "constant.keyword", "constant"],
+      "settings": { "foreground": "#BF79C3" }
+    },
+    {
+      "name": "Global definitions",
+      "scope": "entity.name",
+      "settings": { "foreground": "#61AFEF" }
+    },
+    { "name": "Punctuation", "scope": "punctuation", "settings": { "foreground": "#737C8C" } },
+    {
+      "name": "Invalid",
+      "scope": "invalid",
+      "settings": { "background": "#C62D4233", "foreground": "#DF334A" }
+    },
+    {
+      "name": "Extra: Diff Range",
+      "scope": ["meta.diff.range", "meta.diff.index", "meta.separator"],
+      "settings": { "background": "#61AFEF33", "foreground": "#D2D6DB" }
+    },
+    {
+      "name": "Extra: Diff From",
+      "scope": "meta.diff.header.from-file",
+      "settings": { "background": "#E06C7533", "foreground": "#D2D6DB" }
+    },
+    {
+      "name": "Extra: Diff To",
+      "scope": "meta.diff.header.to-file",
+      "settings": { "background": "#56B6C233", "foreground": "#D2D6DB" }
+    }
+  ]
+}
