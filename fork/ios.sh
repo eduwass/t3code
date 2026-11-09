@@ -158,8 +158,11 @@ cmd_rebuild() {
 
   git config fork-stack.upstream "$base"
   git config fork-stack.check "fork/ios.sh check"
-  bash "$FORK_STACK" sync
-  git push --force-with-lease origin "$BRANCH"
+  # fork/all.sh syncs once and sets this, so it can build both apps at the same time.
+  if [ -z "${T3FORK_SYNCED:-}" ]; then
+    bash "$FORK_STACK" sync
+    git push --force-with-lease origin "$BRANCH"
+  fi
 
   build_checkout "$(git rev-parse HEAD)"
   fingerprint=$(native_fingerprint)
@@ -169,7 +172,10 @@ cmd_rebuild() {
     echo "fork-ios: native code unchanged; building only the JavaScript of $(git rev-parse --short HEAD)"
     swap_javascript "$APP_CACHE/$fingerprint.zip" "$tmp/app.zip"
   else
-    # The push starts .github/workflows/fork-ios.yml; an unchanged stack reuses its last run.
+    # An unchanged stack reuses its last run of .github/workflows/fork-ios.yml.
+    [ -n "$(gh run list -R "$REPO" --workflow fork-ios.yml --commit "$(git rev-parse HEAD)" \
+      --limit 1 --json databaseId -q '.[0].databaseId')" ] ||
+      gh workflow run fork-ios.yml -R "$REPO" --ref "$BRANCH"
     echo "fork-ios: waiting for the hosted build of $(git rev-parse --short HEAD)"
     until run=$(gh run list -R "$REPO" --workflow fork-ios.yml --commit "$(git rev-parse HEAD)" \
       --limit 1 --json databaseId -q '.[0].databaseId') && [ -n "$run" ]; do sleep 10; done
