@@ -18,6 +18,10 @@ const keybindings = compileResolvedKeybindingsConfig([
   { key: "mod+u", command: "usage.open" },
 ]);
 
+const pullRequestKeybindings = compileResolvedKeybindingsConfig([
+  { key: "mod+p", command: "pullRequest.open", when: "!terminalFocus" },
+]);
+
 function MountedPalette() {
   useCommandPaletteMount();
   return null;
@@ -178,6 +182,22 @@ describe("command palette shortcuts", () => {
     }
     expect(useThemeEditorStore.getState().session).toBeNull();
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("open the pull requests page", async () => {
+    setup();
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    await using screen = await render(<MountedPalette />, { router: "/" });
+    using commands = new DisposableStack();
+    commands.defer(
+      installCommandPaletteCommands(screen.router!, {
+        keybindings: () => pullRequestKeybindings,
+      }),
+    );
+
+    await userEvent.keyboard("{Control>}p{/Control}");
+
+    await vi.waitFor(() => expect(screen.router!.state.location.pathname).toBe("/pull-requests"));
   });
 });
 

@@ -25,6 +25,10 @@ Configure whether `Enter` sends or requires `mod+Enter` in **Settings â†’ Chat â
 
 In the model picker, use `Left`/`Shift+Tab` to move to the provider list, `Right` to return to search or move into effort levels, and `Up`/`Down`/`Enter` to select.
 
+## Pull requests
+
+`mod+p` opens the Pull requests page, or type **Open pull requests** in the command palette. The file picker has no default shortcut; reach it with `mod+k` (search **open file**), or bind **File Picker: Toggle** in Settings.
+
 ## Copy pull request and thread references
 
 - `mod+shift+c`: Copies the open PR's URL (or copies a thread chip link when no PR is open).
