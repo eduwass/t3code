@@ -120,6 +120,10 @@ const keepFrames = (ttl: Duration.Input) => (exit: Exit.Exit<PaperResponse, unkn
  * Paper still answers for a deleted frame, with an empty shell and no parent; once the file
  * reloads, the node is gone. `node` is the parsed `get_node_info` payload, or its error text.
  */
+/** Paper names a node's artboard; an artboard itself has none. */
+export const artboardOf = (node: Record<string, unknown>, nodeId: string) =>
+  stringOrNull(node.artboardId) ?? nodeId;
+
 export const isDeletedFrame = (node: Record<string, unknown> | string) =>
   typeof node === "string" ? node.startsWith("Node not found") : node.parentId === null;
 
@@ -268,6 +272,16 @@ const make = Effect.fn("PaperService.make")(function* () {
     { capacity: 1024, timeToLive: keepSuccesses(Duration.minutes(10)) },
   );
 
+  // A node stays in its artboard, so the answer keeps.
+  const artboards = yield* Cache.makeWith(
+    Effect.fn("PaperService.artboardOf")(function* (cacheKey: string) {
+      const [fileId, nodeId] = split(cacheKey);
+      const info = yield* payloadJson(yield* call("get_node_info", { fileId, nodeId }));
+      return { _tag: "artboardOf" as const, nodeId: artboardOf(info, nodeId) };
+    }),
+    { capacity: 1024, timeToLive: keepSuccesses(Duration.hours(1)) },
+  );
+
   const fileFrames = yield* Cache.makeWith(
     Effect.fn("PaperService.fileFrames")(function* (fileId: string) {
       const info = yield* payloadJson(yield* call("get_basic_info", { fileId }));
@@ -408,6 +422,8 @@ const make = Effect.fn("PaperService.make")(function* () {
         }
         case "listFrames":
           return yield* Cache.get(fileFrames, input.fileId);
+        case "artboardOf":
+          return yield* Cache.get(artboards, key(input.fileId, input.nodeId));
         case "frameImage":
           return yield* Cache.get(
             frameImages,

@@ -13,7 +13,7 @@ describe("paperThreadShots", () => {
       { type: "message" },
       { paperShots: [shot("a", 500, "a2"), shot("c", null)] },
     ]);
-    expect(shots.map((s) => [s.key, s.image.itemId])).toEqual([
+    expect(shots.map((s) => [s.key, s.image?.itemId])).toEqual([
       ["a", "a2"],
       ["b", "b"],
       ["c", "c"],
