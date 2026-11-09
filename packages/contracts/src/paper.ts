@@ -72,6 +72,8 @@ export const PaperRequest = Schema.Union([
     nodeId: PaperId,
     revision: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
   }),
+  /** The artboard a node sits in, so a frame being drawn shows whole. */
+  Schema.TaggedStruct("artboardOf", { fileId: PaperId, nodeId: PaperId }),
   /** `revision` names the screenshot the frame came from, so a newer drawing is fetched again. */
   Schema.TaggedStruct("liveFrame", {
     fileId: PaperId,
@@ -89,6 +91,7 @@ export const PaperResponse = Schema.Union([
     frames: Schema.Array(PaperFrame),
   }),
   Schema.TaggedStruct("frameImage", { attachmentId: TrimmedNonEmptyString }),
+  Schema.TaggedStruct("artboardOf", { nodeId: PaperId }),
   Schema.TaggedStruct("liveFrame", {
     attachmentId: TrimmedNonEmptyString,
     width: Schema.Number,
