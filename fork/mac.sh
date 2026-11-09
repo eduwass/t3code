@@ -81,8 +81,11 @@ version=${version#v}
 
 git config fork-stack.upstream "$base"
 git config fork-stack.check "fork/ios.sh check"
-bash "$FORK_STACK" sync
-git push --force-with-lease origin "$BRANCH"
+# fork/all.sh syncs once and sets this, so it can build both apps at the same time.
+if [ -z "${T3FORK_SYNCED:-}" ]; then
+  bash "$FORK_STACK" sync
+  git push --force-with-lease origin "$BRANCH"
+fi
 
 # The push to mac/<version> starts .github/workflows/fork-mac.yml. gh finds runs by workflow
 # file only on the default branch, so the run is found by its branch.
