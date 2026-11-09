@@ -1703,6 +1703,7 @@ function OpenCommandPaletteDialog(props: {
       ],
       title: gt("Open pull requests"),
       icon: <PullRequestGlyph.pullRequest className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "pullRequest.open",
       run: async () => {
         await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
       },
