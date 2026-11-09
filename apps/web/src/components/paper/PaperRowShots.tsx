@@ -24,6 +24,7 @@ import {
   type PaperViewerTarget,
   usePaperDrawing,
   usePaperDrawingKey,
+  usePaperDrawingShot,
   usePaperThumbnail,
 } from "./paperThreadShots";
 
@@ -44,15 +45,23 @@ export function PaperRowShots({ row }: { row: TimelineRow }) {
   return null;
 }
 
-/** On the running turn's tool row while the agent holds an artboard in Paper. */
+/**
+ * On the running turn's tool row while the agent holds an artboard in Paper, with that
+ * artboard until the agent screenshots it and it joins the row's own frames.
+ */
 function PaperDrawingLine() {
-  const drawing = usePaperDrawing(use(TimelineRowCtx).activeThreadEnvironmentId);
+  const environmentId = use(TimelineRowCtx).activeThreadEnvironmentId;
+  const drawing = usePaperDrawing(environmentId);
+  const shot = usePaperDrawingShot(environmentId);
   if (!drawing) return null;
   return (
-    <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-      <PaperRain />
-      <span>Drawing in Paper</span>
-    </div>
+    <>
+      <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+        <PaperRain />
+        <span>Drawing in Paper</span>
+      </div>
+      {shot !== null ? <PaperShotsStrip shots={[shot]} /> : null}
+    </>
   );
 }
 
@@ -149,6 +158,19 @@ function ShotImage(props: {
   // The same query the strip prefetches, so this costs no extra Paper call.
   const live = usePaperLiveFrame(props.environmentId, props.shot, props.live);
   const deleted = thumbnail.deleted || live.data?._tag === "frameDeleted";
+  if (thumbnail.resource === null) {
+    return (
+      <button
+        type="button"
+        aria-label={`Open ${props.alt}`}
+        className="flex items-center justify-center rounded-lg bg-muted"
+        style={DRAWING_PLACEHOLDER_STYLE}
+        onClick={props.onExpand}
+      >
+        <PaperRain />
+      </button>
+    );
+  }
   return (
     <>
       <ChatMarkdownAssetImage
@@ -193,9 +215,16 @@ export function PaperThreadScope(props: {
           {viewing !== null ? (
             <PaperFrameViewer
               environmentId={props.environmentId}
-              // The thread's frames, unless the strip had one the thread list has not caught up on.
+              // The thread's frames, after the strip's own when the thread has not caught up on them.
               shots={
-                props.shots.some((shot) => shot.key === viewing.key) ? props.shots : viewing.shots
+                props.shots.some((shot) => shot.key === viewing.key)
+                  ? props.shots
+                  : [
+                      ...viewing.shots,
+                      ...props.shots.filter(
+                        (shot) => !viewing.shots.some((own) => own.key === shot.key),
+                      ),
+                    ]
               }
               initialKey={viewing.key}
               live={viewing.live}
@@ -211,6 +240,7 @@ export function PaperThreadScope(props: {
 // Height-led sizing; the asset's authored width would make each figure as wide as the full image.
 const SHOT_IMAGE_STYLE = { height: "11rem", width: "auto", maxWidth: "20rem" } as const;
 const CAPTION_STYLE = { maxWidth: "20rem" } as const;
+const DRAWING_PLACEHOLDER_STYLE = { height: "11rem", width: "16rem" } as const;
 
 const PAPER_ICON_URL = faviconUrlForOrigin("https://paper.design");
 

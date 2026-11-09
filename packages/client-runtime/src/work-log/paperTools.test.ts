@@ -5,6 +5,7 @@ import {
   paperActivity,
   paperDrawingInRun,
   paperDrawingKey,
+  paperDrawingShot,
   paperLiveRevision,
   paperNodeUrl,
   paperShots,
@@ -56,7 +57,7 @@ describe("paperShots", () => {
       call("e", "mcp__paper__get_screenshot", { fileId: "F", nodeId: "3-0" }, "failed"),
       call("f", "mcp__paper__get_screenshot", { summary: "too big", truncated: true }),
     ]);
-    expect(shots.map((shot) => [shot.nodeId, shot.image.itemId, shot.capturedAt])).toEqual([
+    expect(shots.map((shot) => [shot.nodeId, shot.image?.itemId, shot.capturedAt])).toEqual([
       ["1-0", "d", 300],
       ["2-0", "c", null],
     ]);
@@ -87,12 +88,17 @@ describe("paperActivity", () => {
 
   it("holds from the first write until finish_working_on_nodes", () => {
     const holding = paperActivity(calls);
-    expect(holding).toMatchObject({ holding: true, lastWrite: "w2", targets: ["1-0", "9-9"] });
+    expect(holding).toMatchObject({
+      holding: true,
+      lastWrite: "w2",
+      targets: ["1-0", "9-9"],
+      drawing: { fileId: "F", nodeId: "9-9" },
+    });
     const released = paperActivity([
       ...calls,
       call("f", "mcp__paper__finish_working_on_nodes", {}),
     ]);
-    expect(released).toMatchObject({ holding: false, lastWrite: "w2", targets: [] });
+    expect(released).toMatchObject({ holding: false, lastWrite: "w2", targets: [], drawing: null });
     expect(paperActivity([shoot("s1", "1-0", 1)])).toMatchObject({
       holding: false,
       lastWrite: null,
@@ -112,6 +118,15 @@ describe("paperActivity", () => {
     const elsewhere = paperActivity([calls[0]!, calls[1]!, calls[3]!]);
     expect(paperDrawingKey(shots, elsewhere)).toBe("F/2-0");
     expect(paperDrawingKey(shots, paperActivity([]))).toBeNull();
+    expect(paperDrawingKey(shots, elsewhere, "F/7-0")).toBe("F/7-0");
+  });
+
+  it("stands in for an artboard being drawn until the agent screenshots it", () => {
+    const shots = paperShots(calls);
+    expect(paperDrawingShot(shots, "F", "1-0")).toBeNull();
+    const drawing = paperDrawingShot(shots, "F", "7-0");
+    expect(drawing).toMatchObject({ key: "F/7-0", nodeId: "7-0", image: null });
+    expect(paperLiveRevision(drawing!, shots, paperActivity(calls))).toBe("drawing+w2");
   });
 
   it("moves the live revision of written and newest frames only, and keeps it after release", () => {

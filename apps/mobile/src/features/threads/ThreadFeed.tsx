@@ -178,7 +178,7 @@ import {
 import { messageImageGallery } from "./messageImageGallery";
 import { MARKDOWN_IMAGE_MAX_WIDTH, resolveMarkdownImageDisplaySize } from "./markdownImageSize";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/ui/FilePreviewModal";
-import { PaperShotsStrip } from "../paper/PaperShotsStrip";
+import { PaperDrawingStrip, PaperShotsStrip } from "../paper/PaperShotsStrip";
 import { PaperThreadShotsSync } from "../paper/paperThreadState";
 import { inlineFilePreviewKind, isPdfFile } from "../../lib/filePreview";
 import { ThreadInlineFilePreview } from "./ThreadInlineFilePreview";
@@ -4478,22 +4478,22 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               </>
             }
             ListFooterComponent={
-              props.pendingHandoff || props.statusLines?.length ? (
-                <>
-                  {props.pendingHandoff ? (
-                    <ThreadHandoffDivider
-                      environmentId={props.environmentId}
-                      endpoints={props.pendingHandoff}
-                      iconColor={iconSubtleColor}
-                      surfaceColor={screenColor}
-                      label={gt("Context handoff pending")}
-                    />
-                  ) : null}
-                  {props.statusLines?.map((line) => (
-                    <ThreadStatusLine key={line.key} line={line} iconColor={iconSubtleColor} />
-                  ))}
-                </>
-              ) : null
+              <>
+                {/* T3 Space fork: the artboard the agent is drawing, before any screenshot. */}
+                <PaperDrawingStrip environmentId={props.environmentId} />
+                {props.pendingHandoff ? (
+                  <ThreadHandoffDivider
+                    environmentId={props.environmentId}
+                    endpoints={props.pendingHandoff}
+                    iconColor={iconSubtleColor}
+                    surfaceColor={screenColor}
+                    label={gt("Context handoff pending")}
+                  />
+                ) : null}
+                {props.statusLines?.map((line) => (
+                  <ThreadStatusLine key={line.key} line={line} iconColor={iconSubtleColor} />
+                ))}
+              </>
             }
             contentContainerStyle={{
               ...(props.fitShortFeedToViewport ? { minHeight: "100%" } : {}),

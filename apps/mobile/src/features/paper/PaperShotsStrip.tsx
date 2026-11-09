@@ -1,7 +1,7 @@
 // T3 Space fork: the Paper frames the agent screenshotted, under the tool-call
 // group. Paper doesn't run on phones, so a tap opens the Paper frame viewer.
 import { useAtomValue } from "@effect/atom-react";
-import type { PaperShot } from "@t3tools/client-runtime/work-log/paper-tools";
+import { paperShotBase, type PaperShot } from "@t3tools/client-runtime/work-log/paper-tools";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Image } from "expo-image";
 import { Pressable, ScrollView, View } from "react-native";
@@ -15,6 +15,7 @@ import { PaperRain } from "./PaperRain";
 import {
   currentPaperThreadShots,
   usePaperDrawingKey,
+  usePaperDrawingShot,
   usePaperShotThumbnail,
 } from "./paperThreadState";
 import {
@@ -24,6 +25,14 @@ import {
 
 const SHOT_WIDTH = 132;
 const PAPER_ICON = require("../../../assets/paper-icon.png");
+
+/** Under the live work, the artboard the agent is drawing until it screenshots it. */
+export function PaperDrawingStrip(props: { readonly environmentId: EnvironmentId }) {
+  const shot = usePaperDrawingShot();
+  return shot === null ? null : (
+    <PaperShotsStrip environmentId={props.environmentId} shots={[shot]} />
+  );
+}
 
 export function PaperShotsStrip(props: {
   readonly environmentId: EnvironmentId;
@@ -67,7 +76,7 @@ export function PaperShotsStrip(props: {
         nodeId: shot.nodeId,
         name: nameOf(shot),
         image: shot.image,
-        revision: shot.image.itemId,
+        revision: paperShotBase(shot),
         capturedAt: shot.capturedAt,
       })),
     });
@@ -126,6 +135,19 @@ function ShotImage(props: {
   readonly onPress: () => void;
 }) {
   const thumbnail = usePaperShotThumbnail(props.environmentId, props.shot);
+  if (thumbnail.resource === null) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Open the frame being drawn"
+        onPress={props.onPress}
+        className="items-center justify-center rounded-lg bg-subtle"
+        style={{ width: SHOT_WIDTH, height: SHOT_WIDTH * 0.75 }}
+      >
+        <PaperRain />
+      </Pressable>
+    );
+  }
   return (
     <View>
       <View style={{ opacity: thumbnail.deleted ? 0.55 : 1 }}>
