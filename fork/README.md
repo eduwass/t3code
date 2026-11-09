@@ -4,6 +4,15 @@ Upstream T3 Code plus a short stack of commits on the `stack` branch, replayed o
 upstream with a rebase (never a merge). `git log <base>..stack` is the full list of
 what differs; there is no other record. Everything under `fork/` exists only here.
 
+## Rebuild both apps
+
+```sh
+fork/all.sh            # from the devbox, on the stack branch
+```
+
+It rebases and pushes the stack once, then runs `fork/ios.sh` and `fork/mac.sh` (below)
+at the same time. Each script alone does its own rebase, so two run by hand would race.
+
 ## Rebuild the iPhone app
 
 ```sh
@@ -11,9 +20,13 @@ fork/ios.sh            # from the devbox, on the stack branch
 ```
 
 It rebases the stack onto the base, runs the checks and pushes `stack` to `origin`
-(a force push, because the rebase rewrites it). The push starts
+(a force push, because the rebase rewrites it). It then starts
 `.github/workflows/fork-ios.yml`, which compiles an unsigned Release app on a
-GitHub-hosted Mac in about 25 minutes. The script then downloads it, signs it on the
+GitHub-hosted Mac in about 25 minutes. When the native fingerprint (the hash
+`mobile:install` uses) matches a build it kept, the script skips that wait: it builds
+the JavaScript bundle in a clean checkout (`../t3code-ios-build`) and swaps it into the
+kept app, in a few minutes. `T3FORK_FULL=1` forces the hosted build. The script then
+downloads or patches the app, signs it on the
 13" MacBook with the team's development certificate and installs it on the phone
 over Wi-Fi. That Mac must be awake and logged in. A rebase conflict stops it:
 resolve, `git rebase --continue`, run it again.
