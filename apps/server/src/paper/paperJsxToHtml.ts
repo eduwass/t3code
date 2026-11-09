@@ -47,6 +47,8 @@ const SVG_KEEP_CASE = new Set([
   "gradientUnits",
   "gradientTransform",
 ]);
+// SVG defs that shapes point at with url(#id); renaming their id leaves the shape unpainted.
+const SVG_REFERENCED = new Set(["linearGradient", "radialGradient", "clipPath", "mask"]);
 const GENERIC_FONTS = new Set([
   "system-ui",
   "sans-serif",
@@ -236,11 +238,11 @@ function styleText(style: Value, collected: Collected): string {
     .join(";");
 }
 
-function attrName(name: string, inSvg: boolean): string | null {
+function attrName(name: string, inSvg: boolean, tag: string): string | null {
   if (/^on/i.test(name) || name === "dangerouslySetInnerHTML" || name === "ref" || name === "key")
     return null;
   if (name === "className") return "class";
-  if (name === "id") return "data-paper-node";
+  if (name === "id") return SVG_REFERENCED.has(tag) ? "id" : "data-paper-node";
   if (inSvg && /[A-Z]/.test(name) && !SVG_KEEP_CASE.has(name)) return kebab(name);
   return name;
 }
@@ -252,7 +254,7 @@ function render(node: Element | string, inSvg: boolean, collected: Collected): s
   const attrs = node.attrs
     .flatMap(([name, value]) => {
       if (name === "style") return [` style="${escapeHtml(styleText(value, collected))}"`];
-      const html = attrName(name, svg);
+      const html = attrName(name, svg, node.tag);
       if (html === null || typeof value === "object") return [];
       const text = String(value);
       if ((html === "src" || html === "href") && !/^https:\/\//i.test(text)) return [];

@@ -11,7 +11,8 @@ describe("paperJsxToHtml", () => {
     <div id="1-0" style={{ backgroundColor: '#0A0A0A', width: '390px', flexShrink: 0, fontWeight: 600, WebkitFontSmoothing: 'antialiased', fontFamily: '"Playfair Display", system-ui, sans-serif' }}>
       <span style={{ color: '#8E9A9D' }}> of 39 steps</span>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16">
-        <path d="M5 12h14" strokeWidth="2" strokeLinecap="round" />
+        <defs><linearGradient id="_3PP-2__g0" gradientUnits="userSpaceOnUse"><stop stopColor="#fff" offset="0" /></linearGradient></defs>
+        <path d="M5 12h14" strokeWidth="2" strokeLinecap="round" fill="url(#_3PP-2__g0)" />
       </svg>
     </div>
   )`,
@@ -20,7 +21,9 @@ describe("paperJsxToHtml", () => {
     expect(body(html)).toBe(
       '<div data-paper-node="1-0" style="background-color:#0A0A0A;width:390px;flex-shrink:0;font-weight:600;-webkit-font-smoothing:antialiased;font-family:&quot;Playfair Display&quot;, system-ui, sans-serif">' +
         '<span style="color:#8E9A9D"> of 39 steps</span>' +
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14" stroke-width="2" stroke-linecap="round"></path></svg></div>',
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16">' +
+        '<defs><linearGradient id="_3PP-2__g0" gradientUnits="userSpaceOnUse"><stop stop-color="#fff" offset="0"></stop></linearGradient></defs>' +
+        '<path d="M5 12h14" stroke-width="2" stroke-linecap="round" fill="url(#_3PP-2__g0)"></path></svg></div>',
     );
     expect(html).toContain("fonts.googleapis.com/css?family=Playfair+Display:400,600");
   });
