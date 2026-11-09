@@ -2,10 +2,8 @@ name: Fork iOS build
 
 # Compiles the fork's iPhone app unsigned on a hosted Mac, because upstream's
 # native code needs a newer Xcode than the Mac that signs and installs it has.
-# fork/ios.sh picks up the artifact. See fork/README.md.
+# fork/ios.sh starts it when native code changed and picks up the artifact. See fork/README.md.
 on:
-  push:
-    branches: [stack]
   workflow_dispatch:
 
 jobs:
