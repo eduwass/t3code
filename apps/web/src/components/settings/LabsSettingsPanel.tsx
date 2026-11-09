@@ -14,6 +14,7 @@ import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
 import { PaperIntegrationRow } from "./PaperIntegrationRow";
+import { CodeThemesLabsRow } from "../../codeThemes/CodeThemeSettings";
 import {
   useScopedSettings,
   useScopedSettingsMixed,
@@ -38,6 +39,7 @@ export function LabsSettingsPanel() {
         <FastWorktreeCheckoutRow />
         <AgentFeedbackRow />
         <PaperIntegrationRow />
+        <CodeThemesLabsRow />
       </SettingsSection>
     </SettingsPageContainer>
   );

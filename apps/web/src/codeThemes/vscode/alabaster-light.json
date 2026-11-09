@@ -1,0 +1,62 @@
+{
+  "name": "alabaster-light",
+  "displayName": "Alabaster Light",
+  "type": "light",
+  "source": "https://open-vsx.org/extension/tonsky/theme-alabaster",
+  "license": "MIT",
+  "colors": {
+    "editor.background": "#F7F7F7",
+    "editor.foreground": "#000",
+    "editor.lineHighlightBackground": "#F0F0F0",
+    "editor.selectionBackground": "#BFDBFE",
+    "editorLineNumber.foreground": "#9DA39A"
+  },
+  "tokenColors": [
+    {
+      "name": "Comments",
+      "scope": ["comment", "punctuation.definition.comment"],
+      "settings": { "foreground": "#AA3731" }
+    },
+    {
+      "name": "Strings",
+      "scope": ["string", "string.regexp", "constant.other.symbol"],
+      "settings": { "foreground": "#448C27" }
+    },
+    {
+      "name": "Strings: Escape Sequences",
+      "scope": "constant.character.escape",
+      "settings": { "foreground": "#777777" }
+    },
+    {
+      "name": "Numbers, Characters",
+      "scope": ["constant.numeric", "constant.character", "constant.keyword", "constant"],
+      "settings": { "foreground": "#7A3E9D" }
+    },
+    {
+      "name": "Global definitions",
+      "scope": "entity.name",
+      "settings": { "foreground": "#325CC0" }
+    },
+    { "name": "Punctuation", "scope": "punctuation", "settings": { "foreground": "#777777" } },
+    {
+      "name": "Invalid",
+      "scope": "invalid",
+      "settings": { "background": "#96000014", "foreground": "#660000" }
+    },
+    {
+      "name": "Extra: Diff Range",
+      "scope": ["meta.diff.range", "meta.diff.index", "meta.separator"],
+      "settings": { "background": "#DDDDFF", "foreground": "#434343" }
+    },
+    {
+      "name": "Extra: Diff From",
+      "scope": "meta.diff.header.from-file",
+      "settings": { "background": "#FFDDDD", "foreground": "#434343" }
+    },
+    {
+      "name": "Extra: Diff To",
+      "scope": "meta.diff.header.to-file",
+      "settings": { "background": "#DDFFDD", "foreground": "#434343" }
+    }
+  ]
+}
