@@ -7,7 +7,12 @@ import {
   type SupportedLanguages,
 } from "@pierre/diffs";
 
-import { DIFF_THEME_NAMES } from "./diffRendering";
+import { resolveDiffThemeName } from "./diffRendering";
+import {
+  effectiveEngine,
+  highlighterFor,
+  STARTUP_CODE_THEME_SETTINGS,
+} from "../codeThemes/codeThemes";
 
 // Highlights has no lexer for these dialects, so they use their base language's.
 setCustomExtension("luau", "lua");
@@ -19,7 +24,9 @@ setCustomExtension("xslt", "xml");
  * Shiki and never backtrack like Shiki's JS regex engine. Only one highlighter
  * type can be active per thread, so every creation site must pass this value.
  */
-export const PREFERRED_HIGHLIGHTER: HighlighterTypes = "highlights";
+export const PREFERRED_HIGHLIGHTER: HighlighterTypes = highlighterFor(
+  effectiveEngine(STARTUP_CODE_THEME_SETTINGS),
+);
 
 const highlighterPromiseCache = new Map<string, Promise<DiffsHighlighter>>();
 
@@ -29,7 +36,7 @@ export function getSyntaxHighlighterPromise(language: string): Promise<DiffsHigh
 
   const promise = getSharedHighlighter({
     // Both palettes, so switching appearance never needs a new highlighter.
-    themes: Object.values(DIFF_THEME_NAMES),
+    themes: [resolveDiffThemeName("light"), resolveDiffThemeName("dark")],
     langs: [language as SupportedLanguages],
     preferredHighlighter: PREFERRED_HIGHLIGHTER,
   }).catch((error) => {

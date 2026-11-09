@@ -512,6 +512,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["beta paper design mockup artboard frame thumbnails canvas"],
   },
   {
+    id: "code-themes",
+    title: "Code themes (T3 Space)",
+    to: "/settings/labs",
+    searchTerms: ["beta syntax highlighting theme shiki pierre engine colors code linear vscode"],
+  },
+  {
     id: "paper-live-frames",
     title: "Live Paper frames (experiment)",
     to: "/settings/labs",
