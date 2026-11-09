@@ -23,6 +23,15 @@ OTA_URL=${T3FORK_OTA_URL:-https://devbox.tailf24f3e.ts.net:4488}
 OTA_DIR=$HOME/.cache/t3code-fork-ota
 FORK_STACK=${FORK_STACK:-$HOME/.claude/skills/fork-stack/fork-stack.sh}
 JOB=dev.t3fork.ios
+# The last hosted build per native fingerprint. When only JavaScript changed, rebuild uses it
+# and swaps in a bundle built here (minutes) instead of waiting for a new hosted build (half
+# an hour). T3FORK_FULL=1 forces the hosted build.
+APP_CACHE=$HOME/.cache/t3code-fork-ios-native
+# A clean checkout of the pushed commit, so other work in the main checkout stays out of the bundle.
+BUILD_DIR=${T3FORK_IOS_BUILD_DIR:-$(cd .. && pwd)/../t3code-ios-build}
+# Same as the env in .github/workflows/fork-ios.yml: the app config, and so the fingerprint, depend on it.
+IOS_ENV=(APP_VARIANT=preview EXPO_NO_GIT_STATUS=1 T3CODE_IOS_PERSONAL_TEAM=1
+  T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID="$BUNDLE_ID" T3CODE_MOBILE_UPDATES_ENABLED=0)
 TOUCHED=(
   apps/mobile/src/features/voice-input
   apps/mobile/src/features/settings
@@ -90,6 +99,40 @@ cmd_check() {
   vp lint "${TOUCHED[@]}"
 }
 
+# Checks out $1 in the build checkout with the mobile app's dependencies.
+build_checkout() {
+  [ -d "$BUILD_DIR" ] || git worktree add --quiet --detach "$BUILD_DIR" "$1"
+  git -C "$BUILD_DIR" checkout --quiet --detach "$1"
+  (cd "$BUILD_DIR" && pnpm install --frozen-lockfile --filter '@t3tools/mobile...' >/dev/null)
+}
+
+# The same hash scripts/mobile-native-client.ts computes: it changes only with native code.
+native_fingerprint() {
+  (cd "$BUILD_DIR/apps/mobile" && env "${IOS_ENV[@]}" node -e "const f = require('expo/fingerprint'); f.createFingerprintAsync(process.cwd(), { platforms: ['ios'], silent: true, ignorePaths: ['android/**', 'ios/**'], sourceSkips: f.DEFAULT_SOURCE_SKIPS | f.SourceSkips.ExpoConfigExtraSection }).then(fp => console.log(fp.hash))")
+}
+
+# Rebuilds what Xcode's bundle phases put in the app from the checkout's JavaScript: the Hermes
+# bundle, its assets and the embedded app config. Writes the patched app to $2.
+swap_javascript() {
+  local work app mobile=$BUILD_DIR/apps/mobile hermesc constants
+  work=$(mktemp -d)
+  unzip -q "$1" -d "$work"
+  app=$(echo "$work"/*.app)
+  hermesc=$(cd "$mobile" && node -p "require('path').dirname(require.resolve('hermes-compiler/package.json', { paths: [require.resolve('react-native/package.json')] }))")/hermesc/linux64-bin/hermesc
+  constants=$(cd "$mobile" && node -p "require('path').dirname(require.resolve('expo-constants/package.json', { paths: [require.resolve('expo/package.json')] }))")
+  (cd "$mobile" && env "${IOS_ENV[@]}" NODE_ENV=production node_modules/.bin/expo export:embed \
+    --entry-file "$(node -p "require('./package.json').main")" --platform ios --dev false \
+    --reset-cache --minify false --bundle-output "$work/main.js" --assets-dest "$app" \
+    >"$work/export.log" 2>&1) || die "bundling failed: $work/export.log"
+  "$hermesc" -emit-binary -max-diagnostic-width=80 -O -out "$app/main.jsbundle" "$work/main.js" \
+    >/dev/null 2>&1 || die "hermesc failed"
+  (cd "$mobile" && env "${IOS_ENV[@]}" node "$constants/scripts/getAppConfig.js" "$PWD" \
+    "$app/EXConstants.bundle" ios false production >/dev/null) || die "app config failed"
+  # zipfile keeps the executable bits the Mac's ditto restores.
+  (cd "$work" && python3 -m zipfile -c "$2" "$(basename "$app")")
+  rm -rf "$work"
+}
+
 cmd_status() {
   local installed server
   git fetch --quiet --tags upstream
@@ -107,7 +150,7 @@ cmd_status() {
 }
 
 cmd_rebuild() {
-  local base described number run tmp result port
+  local base described number run tmp result port fingerprint
   [ "$(git branch --show-current)" = "$BRANCH" ] || die "switch to the $BRANCH branch first"
   git fetch --quiet --tags upstream
   base=${1:-$(server_tag)}
@@ -118,15 +161,27 @@ cmd_rebuild() {
   bash "$FORK_STACK" sync
   git push --force-with-lease origin "$BRANCH"
 
-  # The push starts .github/workflows/fork-ios.yml; an unchanged stack reuses its last run.
-  echo "fork-ios: waiting for the hosted build of $(git rev-parse --short HEAD)"
-  until run=$(gh run list -R "$REPO" --workflow fork-ios.yml --commit "$(git rev-parse HEAD)" \
-    --limit 1 --json databaseId -q '.[0].databaseId') && [ -n "$run" ]; do sleep 10; done
-  gh run watch "$run" -R "$REPO" --interval 30 --exit-status >/dev/null ||
-    die "hosted build failed: gh run view $run -R $REPO --log-failed"
+  build_checkout "$(git rev-parse HEAD)"
+  fingerprint=$(native_fingerprint)
+  [ -n "$fingerprint" ] || die "no native fingerprint"
   tmp=$(mktemp -d)
-  gh run download "$run" -R "$REPO" --name app --dir "$tmp" ||
-    die "no artifact (they expire after 30 days): gh run rerun $run -R $REPO, then run this again"
+  if [ -z "${T3FORK_FULL:-}" ] && [ -f "$APP_CACHE/$fingerprint.zip" ]; then
+    echo "fork-ios: native code unchanged; building only the JavaScript of $(git rev-parse --short HEAD)"
+    swap_javascript "$APP_CACHE/$fingerprint.zip" "$tmp/app.zip"
+  else
+    # The push starts .github/workflows/fork-ios.yml; an unchanged stack reuses its last run.
+    echo "fork-ios: waiting for the hosted build of $(git rev-parse --short HEAD)"
+    until run=$(gh run list -R "$REPO" --workflow fork-ios.yml --commit "$(git rev-parse HEAD)" \
+      --limit 1 --json databaseId -q '.[0].databaseId') && [ -n "$run" ]; do sleep 10; done
+    gh run watch "$run" -R "$REPO" --interval 30 --exit-status >/dev/null ||
+      die "hosted build failed: gh run view $run -R $REPO --log-failed"
+    gh run download "$run" -R "$REPO" --name app --dir "$tmp" ||
+      die "no artifact (they expire after 30 days): gh run rerun $run -R $REPO, then run this again"
+    mkdir -p "$APP_CACHE"
+    cp "$tmp/app.zip" "$APP_CACHE/$fingerprint.zip"
+    # ponytail: keeps the three newest native builds, a couple hundred megabytes each.
+    ls -t "$APP_CACHE"/*.zip | tail -n +4 | xargs -r rm -f
+  fi
 
   # CFBundleVersion: the nightly's date and run number, plus commits past it for a non-tag base.
   described=$(git describe --tags --match 'v*-nightly.*' "$base")
