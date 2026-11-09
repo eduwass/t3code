@@ -80,7 +80,7 @@ function useFrameThumbnail(
   frame: { fileId: string; nodeId: string; shot: PaperShot | null },
 ): string | null {
   const fetched = useEnvironmentQuery(
-    environmentId !== null && frame.shot === null
+    environmentId !== null && frame.shot?.image == null
       ? serverEnvironment.paper({
           environmentId,
           input: { _tag: "frameImage", fileId: frame.fileId, nodeId: frame.nodeId },
@@ -88,7 +88,7 @@ function useFrameThumbnail(
       : null,
   );
   const resource: AssetResource | null =
-    frame.shot !== null
+    frame.shot?.image != null
       ? frame.shot.image
       : fetched.data?._tag === "frameImage"
         ? { _tag: "attachment", attachmentId: fetched.data.attachmentId, disposition: "inline" }

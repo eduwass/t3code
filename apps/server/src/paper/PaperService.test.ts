@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { emailFromJwt } from "./PaperAccount.ts";
 import { replyMessage } from "./PaperHostedConnection.ts";
-import { attemptOrder, isDeletedFrame, sshHost } from "./PaperService.ts";
+import { artboardOf, attemptOrder, isDeletedFrame, sshHost } from "./PaperService.ts";
 
 describe("attemptOrder", () => {
   it("keeps the saved order and moves a connection that just failed to the end", () => {
@@ -48,5 +48,14 @@ describe("isDeletedFrame", () => {
     ["Paper is busy, try again.", false],
   ])("reads %j", (node, deleted) => {
     expect(isDeletedFrame(node)).toBe(deleted);
+  });
+});
+
+describe("artboardOf", () => {
+  it.each([
+    [{ id: "39Q-2", parentId: "39A-2", artboardId: "39A-2" }, "39A-2"],
+    [{ id: "39A-2", parentId: "root_node_p-1-0", artboardId: null }, "39A-2"],
+  ])("reads %j", (node, artboard) => {
+    expect(artboardOf(node, node.id)).toBe(artboard);
   });
 });
