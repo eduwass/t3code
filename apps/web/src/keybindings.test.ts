@@ -144,7 +144,7 @@ const DEFAULT_BINDINGS = compile([
   },
   {
     shortcut: modShortcut("p"),
-    command: "filePicker.toggle",
+    command: "pullRequest.open",
     whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
   {

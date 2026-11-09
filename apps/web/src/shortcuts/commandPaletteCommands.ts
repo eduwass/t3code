@@ -8,6 +8,7 @@ import {
 } from "../commandPaletteStore";
 import { overlayModeForCommand } from "../components/CommandPalette.logic";
 import { APPEARANCE_OPTIONS, notifyThemeSaveFailure } from "../components/CommandPaletteThemeItems";
+import { readPullRequestListPreferences } from "../components/pullRequest/pullRequestListPreferences";
 import { toggleThemeEditorForTheme } from "../components/settings/themeEditorStore";
 import { toastManager } from "../components/ui/toast";
 import { getThemeSnapshot, setAppearanceMode } from "../hooks/useTheme";
@@ -33,8 +34,8 @@ const toggleOverlay =
   };
 
 /**
- * Palette, theme and usage shortcuts. They read the route, panels and theme
- * when the key is pressed, and are live only while the palette is mounted.
+ * Palette, theme, usage and pull request shortcuts. They read the route, panels
+ * and theme when the key is pressed, and are live only while the palette is mounted.
  */
 export function installCommandPaletteCommands(
   router: AnyRouter,
@@ -102,6 +103,11 @@ export function installCommandPaletteCommands(
         if (event.repeat) return;
         dispatchCommandPalette({ _tag: "SetOpen", open: false });
         void router.navigate({ to: "/usage" });
+      },
+      "pullRequest.open": (event) => {
+        consume(event);
+        dispatchCommandPalette({ _tag: "SetOpen", open: false });
+        void router.navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
       },
       "commandPalette.toggle": toggleOverlay("commandPalette.toggle"),
       "filePicker.toggle": toggleOverlay("filePicker.toggle"),
