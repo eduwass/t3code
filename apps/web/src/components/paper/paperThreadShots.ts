@@ -4,7 +4,9 @@ import {
   paperActivityFromProjectedItems,
   paperDrawingInRun,
   paperDrawingKey,
+  paperDrawingShot,
   paperLiveRevision,
+  paperShotBase,
   paperShotsFromProjectedItems,
   type PaperActivity,
   type PaperShot,
@@ -47,14 +49,38 @@ export function paperThreadActivity(entries: ReadonlyArray<TimelineEntry>): Pape
 export function usePaperDrawingKey(environmentId: EnvironmentId): string | null {
   const shots = use(PaperThreadShotsCtx);
   const activity = use(PaperThreadActivityCtx);
-  const { isWorking, latestRunId } = use(TimelineRowActivityCtx);
-  const enabled = useEnvironmentSettings(
-    environmentId,
-    (settings) => settings.paperIntegrationEnabled && settings.paperWorkingIndicatorEnabled,
-  );
-  return enabled && isWorking && paperDrawingInRun(activity, latestRunId)
-    ? paperDrawingKey(shots, activity!)
+  const drawing = usePaperDrawing(environmentId);
+  const artboard = usePaperDrawingArtboard(environmentId);
+  return drawing && activity !== null
+    ? paperDrawingKey(
+        shots,
+        activity,
+        artboard === null ? null : `${artboard.fileId}/${artboard.nodeId}`,
+      )
     : null;
+}
+
+/** The artboard Paper says the agent is drawing in. */
+function usePaperDrawingArtboard(
+  environmentId: EnvironmentId,
+): { readonly fileId: string; readonly nodeId: string } | null {
+  const activity = use(PaperThreadActivityCtx);
+  const node = usePaperDrawing(environmentId) ? (activity?.drawing ?? null) : null;
+  const artboard = useEnvironmentQuery(
+    node === null
+      ? null
+      : serverEnvironment.paper({ environmentId, input: { _tag: "artboardOf", ...node } }),
+  );
+  return node !== null && artboard.data?._tag === "artboardOf"
+    ? { fileId: node.fileId, nodeId: artboard.data.nodeId }
+    : null;
+}
+
+/** The artboard being drawn, while the agent has not screenshotted it yet. */
+export function usePaperDrawingShot(environmentId: EnvironmentId): PaperShot | null {
+  const shots = use(PaperThreadShotsCtx);
+  const artboard = usePaperDrawingArtboard(environmentId);
+  return artboard === null ? null : paperDrawingShot(shots, artboard.fileId, artboard.nodeId);
 }
 
 /** True while the agent holds an artboard in a running turn, when the indicator is on. */
@@ -76,7 +102,9 @@ export function usePaperLiveRevision(environmentId: EnvironmentId, shot: PaperSh
     environmentId,
     (settings) => settings.paperLiveFramesEnabled && settings.paperLiveUpdatesEnabled,
   );
-  return follow ? paperLiveRevision(shot, shots, activity) : shot.image.itemId;
+  return follow || shot.image === null
+    ? paperLiveRevision(shot, shots, activity)
+    : paperShotBase(shot);
 }
 
 /**
@@ -87,13 +115,15 @@ export function usePaperThumbnail(
   environmentId: EnvironmentId,
   shot: PaperShot,
 ): {
+  /** Null while a frame being drawn waits for its first picture. */
   readonly resource: PaperShot["image"] | Extract<AssetResource, { readonly _tag: "attachment" }>;
   /** Paper no longer has the frame; the last picture stays. */
   readonly deleted: boolean;
 } {
   const revision = usePaperLiveRevision(environmentId, shot);
+  const base = paperShotBase(shot);
   const fresh = useEnvironmentQuery(
-    revision === shot.image.itemId
+    revision === base
       ? null
       : serverEnvironment.paper({
           environmentId,
@@ -103,12 +133,12 @@ export function usePaperThumbnail(
   const [latest, setLatest] = useState<{ base: string; attachmentId: string } | null>(null);
   const fetched = fresh.data?._tag === "frameImage" ? fresh.data.attachmentId : null;
   if (fetched !== null && fetched !== latest?.attachmentId) {
-    setLatest({ base: shot.image.itemId, attachmentId: fetched });
+    setLatest({ base, attachmentId: fetched });
   }
   // A newer screenshot from the agent replaces anything fetched for an older one.
   return {
     resource:
-      latest !== null && latest.base === shot.image.itemId
+      latest !== null && latest.base === base
         ? { _tag: "attachment", attachmentId: latest.attachmentId, disposition: "inline" }
         : shot.image,
     deleted: fresh.data?._tag === "frameDeleted",
