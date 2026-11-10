@@ -29,7 +29,6 @@ import {
   contextCompactionTokenCounts,
   type ToolGroupSummaryKind,
   liveThoughtLine,
-  workEntryHiddenByToolCallVisibility,
 } from "@t3tools/client-runtime/work-log/presentation";
 import {
   deriveRevertTurnCountByUserMessageId,
@@ -64,7 +63,14 @@ import {
   type TurnItemId,
 } from "@t3tools/contracts";
 import type { ThreadRunSummary } from "@t3tools/client-runtime/state/shell";
-import type { ToolCallVisibility } from "@t3tools/contracts/settings";
+import {
+  chatDisplayFoldsEntry,
+  chatDisplayHiddenSummary,
+  chatDisplayImageEntries,
+  chatDisplayImagesKey,
+  chatDisplayRemovesEntry,
+  type TimelineToolCallVisibility,
+} from "../../chatDisplay/chatDisplay";
 import { resolveT3McpToolDefinition } from "@t3tools/shared/t3McpToolPresentation";
 import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import {
@@ -560,6 +566,7 @@ type MessagesTimelineRowContent =
       toolIcon?: WorkLogEntry["toolIcon"];
       hasFailure: boolean;
       paperShots?: ReadonlyArray<PaperShot>;
+      viewedImages?: ReadonlyArray<WorkLogEntry>;
     }
   | {
       kind: "turn-fold";
@@ -570,6 +577,7 @@ type MessagesTimelineRowContent =
       label: string;
       expanded: boolean;
       paperShots?: ReadonlyArray<PaperShot>;
+      viewedImages?: ReadonlyArray<WorkLogEntry>;
     }
   | {
       kind: "attempt-fold";
@@ -1467,8 +1475,7 @@ function timelineRowEntries(
     });
   } else if (visibility !== "showAll") {
     shown = entries.filter(
-      (entry) =>
-        entry.kind !== "work" || !workEntryHiddenByToolCallVisibility(entry.entry, visibility),
+      (entry) => entry.kind !== "work" || !chatDisplayRemovesEntry(entry.entry, visibility),
     );
   }
   return withoutSubagentDelegationRows(settleSupersededReasoning(shown));
@@ -1523,7 +1530,7 @@ export function deriveMessagesTimelineRows(input: {
   threadStartCheckpointReady?: boolean;
   availableRevertTurnCounts?: ReadonlySet<number> | undefined;
   worktreeSetup?: WorktreeSetupSnapshot | null;
-  toolCallVisibility?: ToolCallVisibility;
+  toolCallVisibility?: TimelineToolCallVisibility;
   revealedMessageId?: MessageId | null;
 }): MessagesTimelineRow[] {
   const timelineEntries = timelineRowEntries(input);
@@ -1860,7 +1867,17 @@ export function deriveMessagesTimelineRows(input: {
         label: turnFold.label,
         expanded,
         // Collapsed, the run's Paper frames stay under the fold; expanded, its tool rows show them.
-        ...(expanded ? {} : { paperShots: foldPaperShots }),
+        ...(expanded
+          ? {}
+          : {
+              paperShots: foldPaperShots,
+              viewedImages: chatDisplayImageEntries(
+                [...turnFold.entryIds].map((entryId) => {
+                  const entry = timelineEntryById.get(entryId);
+                  return entry?.kind === "work" ? entry.entry : undefined;
+                }),
+              ),
+            }),
       });
     }
 
@@ -1955,6 +1972,8 @@ export function deriveMessagesTimelineRows(input: {
         continue;
       }
       const groupedEntries = [timelineEntry.entry];
+      // T3 Space: calls the chat display hides fold into a group of their own.
+      const groupFolded = chatDisplayFoldsEntry(timelineEntry.entry, input.toolCallVisibility);
       let cursor = index + 1;
       while (cursor < timelineEntries.length) {
         const nextEntry = timelineEntries[cursor];
@@ -1977,7 +1996,8 @@ export function deriveMessagesTimelineRows(input: {
           foldsByAnchorEntryId.has(nextEntry.id) ||
           supersededFoldsByAnchorEntryId.has(nextEntry.id) ||
           (nextEntry.entry.runId ?? null) !== (timelineEntry.entry.runId ?? null) ||
-          nextEntry.attempt?.id !== timelineEntry.attempt?.id
+          nextEntry.attempt?.id !== timelineEntry.attempt?.id ||
+          chatDisplayFoldsEntry(nextEntry.entry, input.toolCallVisibility) !== groupFolded
         ) {
           break;
         }
@@ -1989,7 +2009,7 @@ export function deriveMessagesTimelineRows(input: {
       );
       if (visibleGroupedEntries.length > 0) {
         const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
-        if (activeInProgressToolEntries.length > 0) {
+        if (activeInProgressToolEntries.length > 0 && !groupFolded) {
           const groupId = workGroupId(timelineEntry.id);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
           const latestActiveToolEntry = activeInProgressToolEntries.at(-1)!;
@@ -2011,6 +2031,7 @@ export function deriveMessagesTimelineRows(input: {
           }
         } else if (
           visibleGroupedEntries.length === 1 &&
+          !groupFolded &&
           workLogEntryIsToolLike(visibleGroupedEntries[0]!)
         ) {
           const singleEntry = visibleGroupedEntries[0]!;
@@ -2057,9 +2078,11 @@ export function deriveMessagesTimelineRows(input: {
             hiddenCount: visibleGroupedEntries.length,
             expanded,
             summary:
-              singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
-                ? singleEntry.label
-                : summarizeToolGroup(visibleGroupedEntries).summary,
+              groupFolded && typeof input.toolCallVisibility === "object"
+                ? chatDisplayHiddenSummary(visibleGroupedEntries, input.toolCallVisibility)
+                : singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
+                  ? singleEntry.label
+                  : summarizeToolGroup(visibleGroupedEntries).summary,
             summaryKind,
             ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
             ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
@@ -2069,6 +2092,7 @@ export function deriveMessagesTimelineRows(input: {
             paperShots: paperShotsFromProjectedItems(
               visibleGroupedEntries.map((entry) => entry.projectedItem),
             ),
+            viewedImages: chatDisplayImageEntries(visibleGroupedEntries),
           });
           if (expanded) {
             nextRows.push(
@@ -2569,6 +2593,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.expanded === bf.expanded &&
         paperShotsKey("paperShots" in a ? a.paperShots : undefined) ===
           paperShotsKey("paperShots" in bf ? bf.paperShots : undefined) &&
+        chatDisplayImagesKey("viewedImages" in a ? a.viewedImages : undefined) ===
+          chatDisplayImagesKey("viewedImages" in bf ? bf.viewedImages : undefined) &&
         anchors.length === nextAnchors.length &&
         anchors.every((id, index) => id === nextAnchors[index])
       );
@@ -2645,7 +2671,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.toolSurface === bw.toolSurface &&
         Equal.equals(a.toolIcon, bw.toolIcon) &&
         a.hasFailure === bw.hasFailure &&
-        paperShotsKey(a.paperShots) === paperShotsKey(bw.paperShots)
+        paperShotsKey(a.paperShots) === paperShotsKey(bw.paperShots) &&
+        chatDisplayImagesKey(a.viewedImages) === chatDisplayImagesKey(bw.viewedImages)
       );
     }
 

@@ -518,6 +518,21 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["beta syntax highlighting theme shiki pierre engine colors code linear vscode"],
   },
   {
+    id: "chat-display",
+    title: "Chat display (T3 Space)",
+    to: "/settings/labs",
+    searchTerms: ["beta tool calls images screenshots paper frames per project hide fold"],
+  },
+  {
+    id: "chat-display-tool-calls",
+    title: "Tool calls & images (T3 Space)",
+    to: "/settings/chat",
+    scope: "project-defaults",
+    searchTerms: [
+      "tool calls kinds commands reads edits images thumbnails paper frames hidden fold",
+    ],
+  },
+  {
     id: "file-tree-look",
     title: "File tree tuning (T3 Space)",
     to: "/settings/labs",

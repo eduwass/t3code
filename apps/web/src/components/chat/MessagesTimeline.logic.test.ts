@@ -1,3 +1,4 @@
+import { DEFAULT_CHAT_DISPLAY_SETTINGS } from "../../chatDisplay/chatDisplayStore";
 import { ThreadId, type WorktreeSetupSnapshot } from "@t3tools/contracts";
 import {
   CheckpointRef,
@@ -2836,6 +2837,26 @@ describe("v2 run and attempt history", () => {
     ]);
     expect(rows([user, failed, final], "hideAll")).toEqual(["user", "final"]);
     expect(rows(turn, "zen")).toEqual(["user", "final"]);
+    // T3 Space chat display: hidden calls fold into their own group instead of vanishing.
+    const folded = deriveMessagesTimelineRows({
+      timelineEntries: turn,
+      expandedRunIds: new Set([runId]),
+      isWorking: false,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      toolCallVisibility: { ...DEFAULT_CHAT_DISPLAY_SETTINGS, mode: "custom" },
+    });
+    expect(folded.map((row) => row.id)).toEqual([
+      "user",
+      "turn-fold:turn-1",
+      "step",
+      "work-toggle:passed",
+      "failed",
+      "final",
+    ]);
+    expect(folded.find((row) => row.kind === "work-toggle")).toMatchObject({
+      summary: "1 hidden · 1 command",
+    });
     const [steer, answer] = [
       message("steer", "user", 4, "steer"),
       message("answer", "assistant", 7),

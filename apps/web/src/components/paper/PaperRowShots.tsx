@@ -8,6 +8,8 @@ import {
 import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
 import { type ReactNode, use, useState } from "react";
 
+import type { ChatDisplaySettings } from "../../chatDisplay/chatDisplayStore";
+
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { useEnvironmentSettings } from "~/hooks/useSettings";
@@ -17,6 +19,12 @@ import { ChatMarkdownAssetImage } from "../chat/ChatMarkdownMedia";
 import { type TimelineRow, TimelineRowCtx } from "../chat/timelineRowContext";
 import { PaperFrameViewer, PaperLivePrefetch, usePaperLiveFrame } from "./PaperFrameViewer";
 import { PaperRain } from "./PaperRain";
+import {
+  ChatDisplayCtx,
+  paperFramesShown,
+  useChatDisplayContext,
+} from "../../chatDisplay/chatDisplay";
+import { ChatDisplayImageStrip } from "../../chatDisplay/ChatDisplayImages";
 import {
   PaperThreadActivityCtx,
   PaperThreadShotsCtx,
@@ -31,7 +39,12 @@ import {
 export function PaperRowShots({ row }: { row: TimelineRow }) {
   // An expanded group renders its header row and its content row; show the shots once.
   if (row.kind === "work-toggle" || row.kind === "turn-fold") {
-    return <PaperShotsStrip shots={row.paperShots} />;
+    return (
+      <>
+        <PaperShotsStrip shots={row.paperShots} />
+        <ChatDisplayImageStrip entries={row.viewedImages} />
+      </>
+    );
   }
   // One shape for live and finished rows, so a viewer opened mid-turn stays open when it ends.
   if (row.kind === "work-live" || (row.kind === "work" && !row.isExpandedToolGroup)) {
@@ -53,7 +66,8 @@ function PaperDrawingLine() {
   const environmentId = use(TimelineRowCtx).activeThreadEnvironmentId;
   const drawing = usePaperDrawing(environmentId);
   const shot = usePaperDrawingShot(environmentId);
-  if (!drawing) return null;
+  const display = useChatDisplayContext();
+  if (!drawing || display?.paperLiveLine === false) return null;
   return (
     <>
       <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
@@ -85,7 +99,8 @@ function PaperShotsStrip({ shots }: { shots: ReadonlyArray<PaperShot> | undefine
   const openViewer = use(PaperViewerOpenCtx);
   const setViewing = (target: { key: string; live: boolean }) =>
     openViewer({ ...target, shots: shots ?? [] });
-  const visible = enabled && shots !== undefined && shots.length > 0;
+  const display = useChatDisplayContext();
+  const visible = enabled && shots !== undefined && shots.length > 0 && paperFramesShown(display);
   // Names need the server to reach Paper; without it the strip still works, unnamed.
   const names = useEnvironmentQuery(
     visible
@@ -204,36 +219,39 @@ export function PaperThreadScope(props: {
   readonly environmentId: EnvironmentId;
   readonly shots: ReadonlyArray<PaperShot>;
   readonly activity: PaperActivity;
+  readonly chatDisplay?: ChatDisplaySettings | null;
   readonly children: ReactNode;
 }) {
   const [viewing, setViewing] = useState<PaperViewerTarget | null>(null);
   return (
-    <PaperThreadShotsCtx value={props.shots}>
-      <PaperThreadActivityCtx value={props.activity}>
-        <PaperViewerOpenCtx value={setViewing}>
-          {props.children}
-          {viewing !== null ? (
-            <PaperFrameViewer
-              environmentId={props.environmentId}
-              // The thread's frames, after the strip's own when the thread has not caught up on them.
-              shots={
-                props.shots.some((shot) => shot.key === viewing.key)
-                  ? props.shots
-                  : [
-                      ...viewing.shots,
-                      ...props.shots.filter(
-                        (shot) => !viewing.shots.some((own) => own.key === shot.key),
-                      ),
-                    ]
-              }
-              initialKey={viewing.key}
-              live={viewing.live}
-              onClose={() => setViewing(null)}
-            />
-          ) : null}
-        </PaperViewerOpenCtx>
-      </PaperThreadActivityCtx>
-    </PaperThreadShotsCtx>
+    <ChatDisplayCtx value={props.chatDisplay ?? null}>
+      <PaperThreadShotsCtx value={props.shots}>
+        <PaperThreadActivityCtx value={props.activity}>
+          <PaperViewerOpenCtx value={setViewing}>
+            {props.children}
+            {viewing !== null ? (
+              <PaperFrameViewer
+                environmentId={props.environmentId}
+                // The thread's frames, after the strip's own when the thread has not caught up on them.
+                shots={
+                  props.shots.some((shot) => shot.key === viewing.key)
+                    ? props.shots
+                    : [
+                        ...viewing.shots,
+                        ...props.shots.filter(
+                          (shot) => !viewing.shots.some((own) => own.key === shot.key),
+                        ),
+                      ]
+                }
+                initialKey={viewing.key}
+                live={viewing.live}
+                onClose={() => setViewing(null)}
+              />
+            ) : null}
+          </PaperViewerOpenCtx>
+        </PaperThreadActivityCtx>
+      </PaperThreadShotsCtx>
+    </ChatDisplayCtx>
   );
 }
 

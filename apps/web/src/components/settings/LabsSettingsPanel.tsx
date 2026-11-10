@@ -12,6 +12,7 @@ import { searchableSetting } from "./settingsSearch";
 import { PaperIntegrationRow } from "./PaperIntegrationRow";
 import { CodeThemesLabsRow } from "../../codeThemes/CodeThemeSettings";
 import { FileTreeLookLabsRow } from "../../fileTreeLook/FileTreeLookSettings";
+import { ChatDisplayLabsRow } from "../../chatDisplay/ChatDisplaySettings";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
 import { firstManagedDenial, usePrimaryManagedPolicy } from "~/state/managedPolicy";
@@ -22,6 +23,7 @@ export function LabsSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="beta" title="Beta">
         <BoringSidebarRow />
+        <ChatDisplayLabsRow />
         {/* Clerk is only mounted when this build has T3 Connect. */}
         {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
         <LinkedEnvironmentsRow />

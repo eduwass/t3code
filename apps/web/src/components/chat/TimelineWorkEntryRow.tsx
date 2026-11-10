@@ -32,6 +32,7 @@ import {
 } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
+import { useChatDisplayImageRem } from "../../chatDisplay/ChatDisplayImages";
 import { ChevronRightIcon, CircleAlertIcon, XIcon, RotateCcwIcon } from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
 import { useAssetUrls } from "../../assets/assetUrls";
@@ -175,6 +176,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
   const { workEntry, workspaceRoot, displayLabel } = props;
   const ctx = use(TimelineRowCtx);
   const { threadRef, onImageExpand, timestampFormat } = ctx;
+  const closedImageRem = useChatDisplayImageRem();
   const { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation } = ctx;
   const threadTarget = useThreadReadTarget(workEntry, ctx.activeThreadEnvironmentId);
   const createdThread =
@@ -511,7 +513,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         </>
       }
     >
-      {expanded && viewedImage && threadRef ? (
+      {(expanded || closedImageRem !== null) && viewedImage && threadRef ? (
         <WorkLogDetails kind="media">
           <ChatMarkdownAssetImage
             environmentId={threadRef.environmentId}
@@ -519,7 +521,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             alt={viewedImage.alt}
             srcFragment={viewedImage.srcFragment}
             workspaceRoot={workspaceRoot}
-            maxHeightRem={16}
+            maxHeightRem={expanded ? 16 : (closedImageRem ?? 16)}
             onImageExpand={onImageExpand}
           />
         </WorkLogDetails>
