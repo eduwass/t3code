@@ -146,6 +146,7 @@ import { useThreadFindPositionReader } from "./useThreadFindPositionReader";
 import { ThreadActivityAnnouncer } from "./ThreadActivityAnnouncer";
 import { useStableHandoffRuns, useIncrementalTimelineRows, useStableRows } from "./useTimelineRows";
 import { PaperRowShots, PaperThreadScope } from "../paper/PaperRowShots";
+import { timelineToolCallVisibility, useChatDisplay } from "../../chatDisplay/chatDisplay";
 import { paperThreadActivity, paperThreadShots } from "../paper/paperThreadShots";
 import { useClientSettings } from "../../hooks/useSettings";
 
@@ -649,7 +650,11 @@ const ConversationTimeline = memo(function ConversationTimeline({
     }
   }
 
-  const preferredToolCallVisibility = useClientSettings((settings) => settings.toolCallVisibility);
+  const chatDisplay = useChatDisplay(activeThreadEnvironmentId, citationThreadRef);
+  const preferredToolCallVisibility = timelineToolCallVisibility(
+    useClientSettings((settings) => settings.toolCallVisibility),
+    chatDisplay,
+  );
   const screenReaderAnnouncements = useClientSettings(
     (settings) => settings.screenReaderAnnouncements,
   );
@@ -1474,6 +1479,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
             environmentId={activeThreadEnvironmentId}
             shots={paperShots}
             activity={paperActivity}
+            chatDisplay={chatDisplay}
           >
             <TooltipScrollDismissArea
               ref={attachTimelineViewportElement}
