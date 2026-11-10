@@ -157,6 +157,7 @@ import { PopoverCreateHandle } from "./ui/popover";
 import {
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
+  selectSelectedRightPanelSurface,
   selectThreadPanelOpen,
   selectThreadRightPanelState,
   useRightPanelStore,
@@ -1036,13 +1037,26 @@ export default function ChatView(props: ChatViewProps) {
   );
   const diffOpen = activeRightPanelKind === "diff";
   const explicitDiffOpenRef = useRef<ScopedThreadRef | null>(null);
+  const shownDiffSurfaceRef = useRef<string | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resets the diff panel store to branch scope when the diff opens without an explicit request
   useLayoutEffect(() => {
     const explicitThreadRef = explicitDiffOpenRef.current;
     explicitDiffOpenRef.current = null;
+    // T3 Space: showing a hidden panel again keeps the diff it had, such as a turn's.
+    const selectedSurface = selectSelectedRightPanelSurface(
+      useRightPanelStore.getState().byThreadKey,
+      activeThreadRef,
+    );
+    const surfaceKey =
+      diffOpen && activeThreadRef && selectedSurface?.kind === "diff"
+        ? `${scopedThreadKey(activeThreadRef)}:${selectedSurface.id}`
+        : null;
+    const reshown = surfaceKey !== null && shownDiffSurfaceRef.current === surfaceKey;
+    if (surfaceKey !== null) shownDiffSurfaceRef.current = surfaceKey;
     if (
       diffOpen &&
       activeThreadRef &&
+      !reshown &&
       explicitThreadRef !== activeThreadRef &&
       !useDiffPanelStore.getState().consumeKeepSelectionOnOpen(activeThreadRef)
     ) {
