@@ -40,6 +40,10 @@ import { workGroupImageGallery } from "./markdownImageGallery";
 import { McpSignInAction } from "./McpSignInAction";
 import * as DateTime from "effect/DateTime";
 import {
+  useChatDisplayImageRem,
+  useViewedImagesRowRem,
+} from "../../chatDisplay/ChatDisplayImages";
+import {
   ChevronRightIcon,
   CircleAlertIcon,
   ExternalLinkIcon,
@@ -262,7 +266,8 @@ export function ViewedImagesTimelineRow({
   row: Extract<TimelineRow, { kind: "viewed-images" }>;
 }) {
   const { threadRef, workspaceRoot, onImageExpand } = use(TimelineRowCtx);
-  if (!threadRef) return null;
+  const maxHeightRem = useViewedImagesRowRem(10);
+  if (!threadRef || maxHeightRem === null) return null;
   return (
     <div className="flex flex-wrap items-start gap-2 px-0.5" data-image-gallery>
       {row.images.map(({ path, pending }) => {
@@ -279,7 +284,7 @@ export function ViewedImagesTimelineRow({
             alt={image.alt}
             srcFragment={image.srcFragment}
             workspaceRoot={workspaceRoot}
-            maxHeightRem={10}
+            maxHeightRem={maxHeightRem}
             onImageExpand={onImageExpand}
           />
         ) : null;
@@ -294,6 +299,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
   const gt = useGT();
   const m = useMessages();
   const { threadRef, onImageExpand, timestampFormat } = ctx;
+  const closedImageRem = useChatDisplayImageRem();
   const { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation } = ctx;
   const threadTarget = useThreadReadTarget(workEntry, ctx.activeThreadEnvironmentId);
   const createdThread =
@@ -699,7 +705,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         </>
       }
     >
-      {expanded && viewedImage && threadRef ? (
+      {(expanded || closedImageRem !== null) && viewedImage && threadRef ? (
         <WorkLogDetails kind="media">
           <ChatMarkdownAssetImage
             environmentId={threadRef.environmentId}
@@ -707,7 +713,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             alt={viewedImage.alt}
             srcFragment={viewedImage.srcFragment}
             workspaceRoot={workspaceRoot}
-            maxHeightRem={16}
+            maxHeightRem={expanded ? 16 : (closedImageRem ?? 16)}
             onImageExpand={expandImage}
           />
         </WorkLogDetails>
