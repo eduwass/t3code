@@ -27,6 +27,7 @@ import type { OrchestratorV2Error } from "./Orchestrator.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { forkInheritedRunOrdinals, ProjectionStoreThreadNotFoundError } from "./ProjectionStore.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
+import { threadTitleMessages } from "./threadTitleMessages.fork.ts";
 
 import { formatThreadTitleContext } from "@t3tools/provider-core/server/threadTitleContext";
 export { formatThreadTitleContext } from "@t3tools/provider-core/server/threadTitleContext";
@@ -186,9 +187,7 @@ const make = Effect.gen(function* () {
                 attachments: message.attachments,
               };
       } else {
-        context = formatThreadTitleContext(
-          projection.messages.filter((message) => !message.streaming),
-        );
+        context = formatThreadTitleContext(threadTitleMessages(projection.messages));
       }
       // A deleted source should not cost the fork its title.
       const inherited = yield* forkSource(projection.thread).pipe(
