@@ -23,6 +23,7 @@ import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import type { OrchestratorV2Error } from "./Orchestrator.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
+import { threadTitleMessages } from "./threadTitleMessages.fork.ts";
 
 import { formatThreadTitleContext } from "@t3tools/provider-core/server/threadTitleContext";
 export { formatThreadTitleContext } from "@t3tools/provider-core/server/threadTitleContext";
@@ -146,9 +147,7 @@ const make = Effect.gen(function* () {
                 attachments: message.attachments,
               };
       } else {
-        context = formatThreadTitleContext(
-          projection.messages.filter((message) => !message.streaming),
-        );
+        context = formatThreadTitleContext(threadTitleMessages(projection.messages));
       }
       if (context.message.length === 0 && context.attachments.length === 0) {
         return { type: "complete" as const };
