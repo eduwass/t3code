@@ -1,6 +1,6 @@
 import { useLayoutEffect } from "react";
 import type { RunId } from "@t3tools/contracts";
-import type { ToolCallVisibility } from "@t3tools/contracts/settings";
+import type { TimelineToolCallVisibility } from "../../chatDisplay/chatDisplay";
 import type { TimelineEntry } from "../../session-logic";
 import {
   timelineTurnFoldRunIdsByEntryId,
@@ -35,7 +35,7 @@ export function useThreadFindPositionReader({
   readonly runningRunId: RunId | null;
   readonly isWorking: boolean;
   readonly runlessWorkActive: boolean;
-  readonly toolCallVisibility: ToolCallVisibility;
+  readonly toolCallVisibility: TimelineToolCallVisibility;
   readonly rows: MessagesTimelineRow[];
   readonly contentInsetEndAdjustment: number;
 }) {

@@ -1,5 +1,6 @@
 import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { fileBasename } from "@t3tools/shared/path";
+import { useChatDisplayEnabled } from "../../chatDisplay/chatDisplay";
 import { useLocation } from "@tanstack/react-router";
 import { CheckIcon, ChevronDownIcon, FolderIcon, LayersIcon } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
@@ -72,7 +73,12 @@ export function SettingsScopeSentence() {
   const scope = useOptionalSettingsScope();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { environments } = useEnvironments();
-  if (scope === null || SETTINGS_DEVICE_ONLY_PATHS.has(pathname)) return null;
+  const [chatDisplayEnabled] = useChatDisplayEnabled();
+  // T3 Space: the Chat page's chat display section is scoped, so it gets the picker.
+  const deviceOnly =
+    SETTINGS_DEVICE_ONLY_PATHS.has(pathname) &&
+    !(chatDisplayEnabled && pathname === "/settings/chat");
+  if (scope === null || deviceOnly) return null;
   const props: SettingsScopeMenuProps = {
     value: scope.search,
     singleEnvironment: scope.singleEnvironment,
