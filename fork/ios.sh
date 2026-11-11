@@ -152,7 +152,8 @@ cmd_status() {
 cmd_rebuild() {
   local base described number run tmp result port fingerprint
   [ "$(git branch --show-current)" = "$BRANCH" ] || die "switch to the $BRANCH branch first"
-  git fetch --quiet --tags upstream
+  # fork/all.sh already fetched; a second fetch beside fork/mac.sh races on the same refs.
+  [ -n "${T3FORK_SYNCED:-}" ] || git fetch --quiet --tags upstream
   base=${1:-$(server_tag)}
   git rev-parse -q --verify "$base^{commit}" >/dev/null || die "unknown base '$base'"
 
@@ -226,8 +227,10 @@ EOF
 <a href='itms-services://?action=download-manifest&url=$OTA_URL/manifest.plist'>Install T3 Code fork $number</a>" \
       >"$OTA_DIR/index.html"
     port=${OTA_URL##*:}
+    # Its own unit: a server started from a script running in a unit dies when that unit ends.
     ss -H -ltn | grep -q ":$port " ||
-      setsid nohup python3 -m http.server "$port" --bind 127.0.0.1 --directory "$OTA_DIR" >/dev/null 2>&1 &
+      systemd-run --user --quiet --collect --unit t3fork-ota \
+        python3 -m http.server "$port" --bind 127.0.0.1 --directory "$OTA_DIR"
     echo "fork-ios: the phone is not on the Mac's network; open $OTA_URL/ on it (Tailscale on) and tap Install"
     ;;
   *) die "signing failed" ;;
