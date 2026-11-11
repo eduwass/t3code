@@ -70,7 +70,7 @@ server_tag() {
   # A fork server build carries a made-up version: keep the base the stack is on.
   if ! git rev-parse -q --verify "$tag^{commit}" >/dev/null; then
     local current
-    current=$(git config fork-stack.upstream) || die "server runs $tag, not an upstream release"
+    current=$(git config fork-server.base || git config fork-stack.upstream) || die "server runs $tag, not an upstream release"
     echo "fork: server runs $tag, not an upstream release; staying on $current" >&2
     tag=$current
   fi

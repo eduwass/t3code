@@ -142,6 +142,7 @@ running turns, terminals and connected apps; if the new build fails to start, it
 rolls back by itself.
 
 `t3 update` moves back to upstream and drops the fork's server features, so update
-by running this script again on the new nightly. The app builds see the fork server's
+with `fork/catchup.sh start` instead: it rebases the stack onto the newest nightly,
+builds both apps, then rebuilds and switches the server. The upkeep task runs it daily. The app builds see the fork server's
 made-up version and stay on the base the stack is on.
 The Paper Desktop command lives in `~/.config/systemd/user/t3code.service.d/paper.conf`.
