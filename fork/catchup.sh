@@ -10,6 +10,7 @@
 #
 # The log says "done <status>" once the server is switched. Then, for up to 18 hours, the
 # unit retries every 10 minutes what a locked phone or an asleep Mac missed, and logs "apps: ...".
+# A failure that needs judgment (rebase conflict, server switch) opens a T3 thread for it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 LOG=${T3FORK_CATCHUP_LOG:-$HOME/.t3/fork-catchup.log}
@@ -25,6 +26,21 @@ retry_apps() {
     if [ $mac != ok ] && fork/mac.sh install; then mac=ok; fi
   done
   echo "apps: iphone $ios, mac $mac"
+}
+
+# Hands a failure to a new T3 thread; the only time a catch-up needs an agent.
+open_thread() {
+  local id
+  id=$(t3 thread start --provider "${T3FORK_AGENT_PROVIDER:-claudeAgent}" --model "${T3FORK_AGENT_MODEL:-claude-opus-5-5}" \
+    --title "Fork catch-up: $1" . "The daily fork catch-up to $target failed: $1.
+Log: ~/.t3/fork-catchup.log. Read fork/README.md and the fork-stack skill, then fix it in this
+checkout (/home/eduwass/Sites/t3code, branch stack). A rebase conflict is left in progress:
+keep upstream's new code, re-apply what each patch meant, git rebase --continue,
+bash ~/.claude/skills/fork-stack/fork-stack.sh verify, git push --force-with-lease origin stack,
+then run fork/catchup.sh start to finish the catch-up. If you cannot fix it with confidence,
+git rebase --abort and ask me with AskUserQuestion. No AI attribution in commits. Never use
+t3 update or edit the server's systemd drop-ins. End with one line on what you did.") &&
+    echo "thread $id" || echo "could not start a thread"
 }
 
 newest() {
@@ -60,10 +76,15 @@ run)
   # Switch the server only when the rebase landed, else it would rebuild the old base.
   git fetch --quiet origin
   if git merge-base --is-ancestor "$target" origin/stack; then
-    fork/server.sh && echo "done ok: server $(fork/server.sh base), apps $apps" ||
-      echo "done failed: server switch (it rolls back by itself), apps $apps"
+    if fork/server.sh; then
+      echo "done ok: server $(fork/server.sh base), apps $apps"
+    else
+      echo "done failed: server switch (it rolled back by itself), apps $apps"
+      open_thread "the server switch failed"
+    fi
   else
     echo "done failed: the stack did not rebase onto $target; server unchanged"
+    open_thread "the stack did not rebase cleanly"
   fi
   retry_apps
   ;;
