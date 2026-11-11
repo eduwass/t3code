@@ -2729,6 +2729,10 @@ export default function ChatView(props: ChatViewProps) {
       "thread.copyReference": ({ event }) => {
         if (!event.repeat) copyActiveThreadReference();
       },
+      "sideChat.new": ({ event }) => {
+        if (!sideChat.available || sideChatDisabledReason !== null) return false;
+        if (!event.repeat) void sideChat.open();
+      },
       "chat.find": () => {
         if (!isServerThread || serverConfig?.threadFind !== true || activeThreadKey === null)
           return false;
