@@ -13,6 +13,9 @@ git config fork-stack.upstream "$base"
 git config fork-stack.check "fork/ios.sh check"
 bash "${FORK_STACK:-$HOME/.claude/skills/fork-stack/fork-stack.sh}" sync
 git push --force-with-lease origin stack
+# main tracks the stack's base so "Changes vs main" counts only the fork's commits.
+git push --quiet origin "$base^{commit}:refs/heads/main" && git branch -f main "$base" ||
+  echo "fork-all: main not moved to $base (would go backwards?)" >&2
 
 export T3FORK_SYNCED=1
 fork/ios.sh rebuild "$base" &
