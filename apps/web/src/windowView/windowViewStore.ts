@@ -103,7 +103,7 @@ export function setWindowView(view: WindowView | null, savedName: string | null 
   useWindowViewStore.setState({ view, savedName: view === null ? null : savedName });
 }
 
-export function applyWindowViewSpec(spec: string): void {
+function applyWindowViewSpec(spec: string): void {
   const { view, savedName } = parseWindowViewSpec(spec, useWindowViewStore.getState().savedViews);
   setWindowView(view, savedName);
 }
