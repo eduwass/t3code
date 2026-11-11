@@ -8,11 +8,24 @@
 #                            the server restart at the end cannot kill it
 #   fork/catchup.sh run      the catch-up itself (what `start` runs)
 #
-# The log ends with "done <status>" when finished. Apps on an asleep Mac fail without
-# stopping the server switch; `fork/mac.sh install` / `fork/ios.sh` catch them up later.
+# The log says "done <status>" once the server is switched. Then, for up to 18 hours, the
+# unit retries every 10 minutes what a locked phone or an asleep Mac missed, and logs "apps: ...".
 set -euo pipefail
 cd "$(dirname "$0")/.."
 LOG=${T3FORK_CATCHUP_LOG:-$HOME/.t3/fork-catchup.log}
+
+# Plain shell on purpose: waiting for a device needs no agent.
+retry_apps() {
+  local mac=waiting ios=waiting end=$((SECONDS + 18 * 3600))
+  if fork/mac.sh status >/dev/null 2>&1; then mac=ok; fi
+  git config fork-ios.pending >/dev/null || ios=ok
+  while [ "$mac$ios" != okok ] && [ $SECONDS -lt $end ]; do
+    sleep 600
+    if [ $ios != ok ] && fork/ios.sh retry; then ios=ok; fi
+    if [ $mac != ok ] && fork/mac.sh install; then mac=ok; fi
+  done
+  echo "apps: iphone $ios, mac $mac"
+}
 
 newest() {
   git fetch --quiet --tags upstream
@@ -52,6 +65,7 @@ run)
   else
     echo "done failed: the stack did not rebase onto $target; server unchanged"
   fi
+  retry_apps
   ;;
 *)
   echo "usage: fork/catchup.sh status | start | run" >&2

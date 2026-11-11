@@ -31,9 +31,10 @@ downloads or patches the app, signs it on the
 over Wi-Fi. That Mac must be awake and logged in. A rebase conflict stops it:
 resolve, `git rebase --continue`, run it again.
 
-When the phone is not on the Mac's network, the script serves the signed build
-from the devbox and prints a tailnet link instead. Open it on the phone with
-Tailscale on and tap Install.
+When the phone is locked or not on the Mac's network, the script serves the signed
+build from the devbox and prints a tailnet link instead. Open it on the phone with
+Tailscale on and tap Install, or let `fork/ios.sh retry` install it once the phone
+is unlocked.
 
 The compile is hosted because upstream's native code needs a newer Xcode (26.6 works) and
 that Mac is held at 26.3 by macOS 15. Once it runs a newer macOS and Xcode, the
@@ -143,6 +144,8 @@ rolls back by itself.
 
 `t3 update` moves back to upstream and drops the fork's server features, so update
 with `fork/catchup.sh start` instead: it rebases the stack onto the newest nightly,
-builds both apps, then rebuilds and switches the server. The upkeep task runs it daily. The app builds see the fork server's
+builds both apps, then rebuilds and switches the server. The upkeep task runs it daily.
+For 18 hours after that, the same job retries every 10 minutes the installs a locked
+phone or an asleep Mac missed. The app builds see the fork server's
 made-up version and stay on the base the stack is on.
 The Paper Desktop command lives in `~/.config/systemd/user/t3code.service.d/paper.conf`.
