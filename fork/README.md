@@ -146,6 +146,7 @@ rolls back by itself.
 with `fork/catchup.sh start` instead: it rebases the stack onto the newest nightly,
 builds both apps, then rebuilds and switches the server. The upkeep task runs it daily.
 For 18 hours after that, the same job retries every 10 minutes the installs a locked
-phone or an asleep Mac missed. The app builds see the fork server's
+phone or an asleep Mac missed. A rebase conflict or a failed server switch opens a
+T3 thread that fixes it, or asks. The app builds see the fork server's
 made-up version and stay on the base the stack is on.
 The Paper Desktop command lives in `~/.config/systemd/user/t3code.service.d/paper.conf`.
