@@ -73,7 +73,8 @@ if [ "${1:-}" = install ]; then
 fi
 
 [ "$(git branch --show-current)" = "$BRANCH" ] || die "switch to the $BRANCH branch first"
-git fetch --quiet --tags upstream
+# fork/all.sh already fetched; a second fetch beside fork/ios.sh races on the same refs.
+[ -n "${T3FORK_SYNCED:-}" ] || git fetch --quiet --tags upstream
 base=${1:-$(fork/ios.sh tag)}
 git rev-parse -q --verify "$base^{commit}" >/dev/null || die "unknown base '$base'"
 version=$(git describe --tags --match 'v*-nightly.*' --abbrev=0 "$base")
