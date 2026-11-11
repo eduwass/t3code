@@ -206,7 +206,7 @@ cmd_rebuild() {
   case $result in
   "fork-ios: exit 0") echo "fork-ios: installed build $number ($described) on $DEVICE" ;;
   "fork-ios: exit 3")
-    # The phone is not on the Mac's network. iOS installs a signed build from a
+    # The phone is locked or not on the Mac's network. iOS installs a signed build from a
     # link as well, so serve it over the tailnet and let the phone fetch it.
     mkdir -p "$OTA_DIR"
     scp -q "$MAC:$MAC_DIR/app.ipa" "$OTA_DIR/"
@@ -231,7 +231,11 @@ EOF
     ss -H -ltn | grep -q ":$port " ||
       systemd-run --user --quiet --collect --unit t3fork-ota \
         python3 -m http.server "$port" --bind 127.0.0.1 --directory "$OTA_DIR"
-    echo "fork-ios: the phone is not on the Mac's network; open $OTA_URL/ on it (Tailscale on) and tap Install"
+    if ssh "$MAC" "grep -q DeviceLocked '$MAC_DIR/install.log'"; then
+      echo "fork-ios: the phone was locked; unlock it and open $OTA_URL/ on it (Tailscale on) and tap Install"
+    else
+      echo "fork-ios: the phone is not on the Mac's network; open $OTA_URL/ on it (Tailscale on) and tap Install"
+    fi
     ;;
   *) die "signing failed" ;;
   esac
