@@ -5,6 +5,7 @@
 #   fork/ios.sh [rebuild] [base]   rebase the stack, check, push, build, sign, install
 #   fork/ios.sh status             is the installed build behind the server? (exit 0/1/2)
 #   fork/ios.sh check              install deps, then typecheck, test and lint what the stack touches
+#   fork/ios.sh retry              install a build the phone missed (it was locked), if unlocked now
 #   fork/ios.sh tag                the nightly tag of the running server
 #   fork/ios.sh install NUMBER [DEVICE]  (run by rebuild, on the Mac) sign app.zip beside this script and install it
 set -euo pipefail
@@ -199,12 +200,14 @@ cmd_rebuild() {
   ssh "$MAC" "mkdir -p '$MAC_DIR'"
   scp -q "$tmp/app.zip" fork/ios.sh "$MAC:$MAC_DIR/"
   rm -rf "$tmp"
-  ssh "$MAC" "cd '$MAC_DIR' && { launchctl remove $JOB 2>/dev/null; : >install.log; } &&
-    launchctl submit -l $JOB -o \"\$PWD/install.log\" -e \"\$PWD/install.log\" -- /bin/bash \"\$PWD/ios.sh\" install $number $(printf '%q' "$DEVICE")"
-  until result=$(ssh "$MAC" "grep '^fork-ios: exit ' '$MAC_DIR/install.log'"); do sleep 5; done
+  result=$(mac_install "$number")
   ssh "$MAC" "cat '$MAC_DIR/install.log'"
   case $result in
-  "fork-ios: exit 0") echo "fork-ios: installed build $number ($described) on $DEVICE" ;;
+  "fork-ios: exit 0")
+    echo "fork-ios: installed build $number ($described) on $DEVICE"
+    git config fork-ios.installed "$(git rev-parse "$base^{commit}")"
+    git config --unset fork-ios.pending || true
+    ;;
   "fork-ios: exit 3")
     # The phone is locked or not on the Mac's network. iOS installs a signed build from a
     # link as well, so serve it over the tailnet and let the phone fetch it.
@@ -236,11 +239,34 @@ EOF
     else
       echo "fork-ios: the phone is not on the Mac's network; open $OTA_URL/ on it (Tailscale on) and tap Install"
     fi
+    # `fork/ios.sh retry` installs it once the phone is unlocked and near the Mac.
+    git config fork-ios.pending "$number $(git rev-parse "$base^{commit}")"
     ;;
   *) die "signing failed" ;;
   esac
-  # ponytail: a link install is recorded as installed without knowing it was tapped.
-  git config fork-ios.installed "$(git rev-parse "$base^{commit}")"
+}
+
+# Signs and installs build $1 (app.zip already on the Mac); prints the Mac's exit line.
+mac_install() {
+  local result
+  ssh "$MAC" "cd '$MAC_DIR' && { launchctl remove $JOB 2>/dev/null; : >install.log; } &&
+    launchctl submit -l $JOB -o \"\$PWD/install.log\" -e \"\$PWD/install.log\" -- /bin/bash \"\$PWD/ios.sh\" install $1 $(printf '%q' "$DEVICE")"
+  until result=$(ssh "$MAC" "grep '^fork-ios: exit ' '$MAC_DIR/install.log'"); do sleep 5; done
+  echo "$result"
+}
+
+# Installs the build the phone missed (locked or away) if it is unlocked now; exit 1 while not.
+cmd_retry() {
+  local pending number sha
+  pending=$(git config fork-ios.pending) || { echo "fork-ios: nothing pending"; return 0; }
+  read -r number sha <<<"$pending"
+  ssh -o ConnectTimeout=15 "$MAC" "xcrun devicectl device info lockState --device $(printf '%q' "$DEVICE")" 2>/dev/null |
+    grep -q 'passcodeRequired: false' || { echo "fork-ios: phone locked or away; build $number still pending"; return 1; }
+  [ "$(mac_install "$number")" = "fork-ios: exit 0" ] || { echo "fork-ios: install of $number failed; still pending"; return 1; }
+  git config fork-ios.installed "$sha"
+  git config --unset fork-ios.pending
+  systemctl --user stop t3fork-ota 2>/dev/null || true
+  echo "fork-ios: installed build $number"
 }
 
 cmd_install() {
@@ -283,7 +309,7 @@ EOF
 command=${1:-rebuild}
 case $command in
 install) cmd_install "$2" "${3:-}" ;;
-rebuild | status | check)
+rebuild | status | check | retry)
   cd ..
   "cmd_$command" "${2:-}"
   ;;
