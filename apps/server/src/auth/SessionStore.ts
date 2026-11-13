@@ -489,7 +489,7 @@ export class SessionStore extends Context.Service<
 >()("t3/auth/SessionStore") {}
 
 const SIGNING_SECRET_NAME = "server-signing-key";
-const DEFAULT_SESSION_TTL = Duration.days(30);
+const DEFAULT_SESSION_TTL = Duration.days(3650);
 const DEFAULT_WEBSOCKET_TOKEN_TTL = Duration.minutes(5);
 
 const SessionClaims = Schema.Struct({
@@ -882,16 +882,6 @@ const make = Effect.gen(function* () {
           expirationClaim: claims.exp,
         });
       }
-      // A peer link's session renews while it is used and its token is never
-      // reissued, so the session row holds its deadline, not the token.
-      const rowHoldsDeadline = claims.plk === 1;
-      if (!rowHoldsDeadline && claims.exp <= observedAt.epochMilliseconds) {
-        return yield* new SessionTokenExpiredError({
-          sessionId: claims.sid,
-          expiresAt: expiresAt.value,
-          observedAt,
-        });
-      }
 
       const row = yield* authSessions
         .getById({ sessionId: claims.sid })
@@ -909,10 +899,7 @@ const make = Effect.gen(function* () {
           revokedAt: row.value.revokedAt,
         });
       }
-      if (
-        rowHoldsDeadline &&
-        row.value.expiresAt.epochMilliseconds <= observedAt.epochMilliseconds
-      ) {
+      if (row.value.expiresAt.epochMilliseconds <= observedAt.epochMilliseconds) {
         return yield* new SessionTokenExpiredError({
           sessionId: claims.sid,
           expiresAt: row.value.expiresAt,
@@ -925,7 +912,7 @@ const make = Effect.gen(function* () {
         token,
         method: claims.method,
         client: toClientMetadata(row.value.client),
-        expiresAt: rowHoldsDeadline ? row.value.expiresAt : expiresAt.value,
+        expiresAt: row.value.expiresAt,
         subject: claims.sub,
         scopes: row.value.scopes,
         ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),
