@@ -17,8 +17,6 @@ T3=${T3FORK_T3:-$HOME/.local/bin/t3}
 HOME_DIR=${T3CODE_HOME:-$HOME/.t3}
 BUILD_DIR=${T3FORK_SERVER_BUILD_DIR:-$(cd .. && pwd)/t3code-server-build}
 FORK_RUN=900000
-# The single executable needs this exact Node (see `cli.ts build-exe --help`); `fnm install` it.
-SEA_NODE=${T3FORK_SEA_NODE:-26.12.1}
 
 die() {
   echo "fork-server: $*" >&2
@@ -59,11 +57,14 @@ cp .env.example "$BUILD_DIR/.env"
 (
   cd "$BUILD_DIR"
   export PATH=$PWD/node_modules/.bin:$PATH
-  pnpm install --frozen-lockfile >/dev/null
+  pnpm_config_pm_on_fail=ignore pnpm install --frozen-lockfile >/dev/null
   node scripts/update-release-package-versions.ts "$version" >/dev/null
   T3CODE_TELEMETRY_CHANNEL=dev vp run build:desktop:bundle
   node scripts/apply-web-brand-assets.ts nightly apps/server/dist/client
-  fnm exec --using "$SEA_NODE" node apps/server/scripts/cli.ts build-exe
+  # The single executable needs the exact Node upstream pins in engines.node.
+  sea_node=${T3FORK_SEA_NODE:-$(node -p "require('./package.json').engines.node")}
+  fnm install "$sea_node" >/dev/null 2>&1 || true
+  fnm exec --using "$sea_node" node apps/server/scripts/cli.ts build-exe
   # The resource monitor is a Rust binary the fork does not change; reuse the running one's.
   monitor=$(mktemp -d)
   cp -R "$HOME_DIR/runtime/versions/$current/resource-monitor/." "$monitor/"
