@@ -593,4 +593,28 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
       }
     }).pipe(Effect.provide(layerSessionStore())),
   );
+
+  it.effect("keeps paired one-time-token sessions valid past their original 30-day token claim", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-paired-session-ttl-" });
+      const layerInitial = yield* makeDiskSessionStoreLayer(baseDir);
+      const issued = yield* Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        return yield* sessions.issue({
+          subject: "one-time-token",
+          method: "bearer-access-token",
+          ttl: Duration.days(30),
+        });
+      }).pipe(Effect.provide(layerInitial), Effect.scoped);
+
+      const layerReopened = yield* makeDiskSessionStoreLayer(baseDir);
+      yield* Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        yield* TestClock.adjust(Duration.days(31));
+        const verified = yield* sessions.verify(issued.token);
+        expect(verified.sessionId).toBe(issued.sessionId);
+      }).pipe(Effect.provide(Layer.merge(layerReopened, TestClock.layer())), Effect.scoped);
+    }),
+  );
 });

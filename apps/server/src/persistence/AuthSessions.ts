@@ -198,6 +198,14 @@ function toPersistenceSqlOrDecodeError(
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
+  yield* sql`
+    UPDATE auth_sessions
+    SET expires_at = '2036-01-01T00:00:00.000Z'
+    WHERE subject = 'one-time-token'
+      AND revoked_at IS NULL
+      AND expires_at < '2030-01-01T00:00:00.000Z'
+  `.pipe(Effect.ignore);
+
   const insertSessionRow = (ignoreExisting: boolean) =>
     SqlSchema.void({
       Request: CreateAuthSessionInput,
