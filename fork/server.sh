@@ -59,7 +59,7 @@ cp .env.example "$BUILD_DIR/.env"
 (
   cd "$BUILD_DIR"
   export PATH=$PWD/node_modules/.bin:$PATH
-  pnpm install --frozen-lockfile >/dev/null
+  pnpm_config_pm_on_fail=ignore pnpm install --frozen-lockfile >/dev/null
   node scripts/update-release-package-versions.ts "$version" >/dev/null
   T3CODE_TELEMETRY_CHANNEL=dev vp run build:desktop:bundle
   node scripts/apply-web-brand-assets.ts nightly apps/server/dist/client
