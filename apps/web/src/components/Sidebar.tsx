@@ -2995,57 +2995,49 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       handleThreadContextMenu(threadRef, position, source, true),
   );
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window keydown for thread navigation shortcuts using the current thread list
-  useEffect(() => {
-    const onWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || isCommandPaletteOpen() || isModelPickerOpen()) {
-        return;
-      }
-      const command = resolveShortcutCommand(event, keybindings, {
-        platform: navigator.platform,
-        context: threadShortcutContext(routeThreadRef),
-      });
-      const navigateToRowKey = (targetRowKey: string | null) => {
-        if (!targetRowKey) return false;
-        const targetDraftId = draftIdByRowKey.get(targetRowKey);
-        const targetThread = threadByKey.get(targetRowKey);
-        if (targetDraftId === undefined && !targetThread) return false;
-        event.preventDefault();
-        event.stopPropagation();
-        if (targetDraftId !== undefined) navigateToDraft(targetDraftId);
-        else if (targetThread)
-          navigateToThread(scopeThreadRef(targetThread.environmentId, targetThread.id));
-        return true;
-      };
-      const traversalDirection = threadTraversalDirectionFromCommand(command);
-      if (traversalDirection !== null) {
-        navigateToRowKey(
-          resolveAdjacentThreadId({
-            threadIds: orderedRowKeys,
-            currentThreadId: routeRowKey,
-            direction: traversalDirection,
-          }),
-        );
-        return;
-      }
-      const jumpIndex = threadJumpIndexFromCommand(command ?? "");
-      if (jumpIndex === null) return;
-      navigateToRowKey(orderedRowKeys[jumpIndex] ?? null);
+  const onThreadNavigationKeyDown = useStableCallback((event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.repeat || isCommandPaletteOpen() || isModelPickerOpen()) {
+      return;
+    }
+    const command = resolveShortcutCommand(event, keybindings, {
+      platform: navigator.platform,
+      context: threadShortcutContext(routeThreadRef),
+    });
+    const navigateToRowKey = (targetRowKey: string | null) => {
+      if (!targetRowKey) return false;
+      const targetDraftId = draftIdByRowKey.get(targetRowKey);
+      const targetThread = threadByKey.get(targetRowKey);
+      if (targetDraftId === undefined && !targetThread) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      if (targetDraftId !== undefined) navigateToDraft(targetDraftId);
+      else if (targetThread)
+        navigateToThread(scopeThreadRef(targetThread.environmentId, targetThread.id));
+      return true;
     };
-    // Capture phase: the composer editor claims modified arrows (⌘⇧↓ selects to
-    // the end) before a bubbling listener would see them.
-    window.addEventListener("keydown", onWindowKeyDown, true);
-    return () => window.removeEventListener("keydown", onWindowKeyDown, true);
-  }, [
-    draftIdByRowKey,
-    keybindings,
-    navigateToDraft,
-    navigateToThread,
-    orderedRowKeys,
-    routeRowKey,
-    routeThreadRef,
-    threadByKey,
-  ]);
+    const traversalDirection = threadTraversalDirectionFromCommand(command);
+    if (traversalDirection !== null) {
+      navigateToRowKey(
+        resolveAdjacentThreadId({
+          threadIds: orderedRowKeys,
+          currentThreadId: routeRowKey,
+          direction: traversalDirection,
+        }),
+      );
+      return;
+    }
+    const jumpIndex = threadJumpIndexFromCommand(command ?? "");
+    if (jumpIndex === null) return;
+    navigateToRowKey(orderedRowKeys[jumpIndex] ?? null);
+  });
+  // Keep the listener attached when modifier tracking rerenders during the same key event.
+  // Capture phase: the composer editor claims modified arrows (⌘⇧↓ selects to
+  // the end) before a bubbling listener would see them.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window keydown for thread navigation before the composer handles modified arrows
+  useEffect(() => {
+    window.addEventListener("keydown", onThreadNavigationKeyDown, true);
+    return () => window.removeEventListener("keydown", onThreadNavigationKeyDown, true);
+  }, [onThreadNavigationKeyDown]);
 
   const showJumpHints = useThreadJumpHintsVisible(keybindings, routeThreadRef);
   const draftJumpLabelById = showJumpHints
