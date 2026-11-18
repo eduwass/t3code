@@ -588,6 +588,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "environment",
     searchTerms: [msg("beta tab autocomplete predict next message claude codex ghost text")],
   },
+  // oxlint-disable t3code/no-untranslated-copy -- T3 Space fork entries stay English.
   {
     id: "paper-integration",
     title: "Paper integration (T3 Space)",
@@ -643,6 +644,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "environment",
     searchTerms: ["experiment paper live updates follow edits redraw refresh viewer"],
   },
+  // oxlint-enable t3code/no-untranslated-copy
   {
     id: "simlock-hosts",
     title: msg("Simlock device hosts (alpha)"),
