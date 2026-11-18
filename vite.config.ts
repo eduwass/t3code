@@ -599,6 +599,18 @@ export default defineConfig({
         rules: { "t3code/no-untranslated-copy": "error" },
       },
       {
+        // T3 Space fork: its own features stay English.
+        files: [
+          "apps/web/src/{windowView,chatDisplay,codeThemes,fileTreeLook,components/paper}/**",
+          "apps/web/src/components/settings/Paper*.tsx",
+          "apps/mobile/src/features/paper/**",
+          "apps/mobile/src/features/settings/SettingsVoiceInputRouteScreen.tsx",
+          "apps/mobile/src/features/voice-input/QuestionDictation.tsx",
+          "packages/client-runtime/src/work-log/paperFrameReferences.ts",
+        ],
+        rules: { "t3code/no-untranslated-copy": "off" },
+      },
+      {
         // React Compiler owns memoization; upstream rules do not ban redundant useMemo/useCallback.
         files: ["apps/web/src/**/*.{ts,tsx}"],
         rules: {
