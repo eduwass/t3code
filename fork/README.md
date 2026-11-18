@@ -106,6 +106,25 @@ waits and goes in when it quits, so your windows stay put. Meanwhile the sidebar
 update pill shows the waiting build; clicking it restarts T3 Space into it.
 The build has no update feed, so it never updates itself into the official app.
 
+## Omarchy desktop
+
+Run `fork/omarchy.sh` on devbox to build the latest published `origin/stack` and
+install it on `omarchypc`. It does not rebase or update upstream. Builds happen in
+`~/Sites/t3code-omarchy-build`; unchanged commits reuse their completed artifact.
+Launch **T3 Space** from the Omarchy app menu. `fork/omarchy-check.py` verifies the
+installation and app-specific Command mappings without sending keystrokes.
+
+The devbox user timer `t3space-omarchy.timer` runs at 05:00 Europe/Andorra daily.
+It retries a failed run twice, 30 minutes apart. Run it now with
+`systemctl --user start t3space-omarchy.service`; read its journal with
+`journalctl --user -u t3space-omarchy.service`. Disable the timer to stop daily updates.
+
+Each run refreshes portable preferences, local keybindings and saved views from
+MacBook Max. If the Mac sleeps, it keeps the previous snapshot. Updates and
+settings take effect at the next app launch; a running app is left open. Linux
+window coordinates and credentials stay local. Both desktop clients connect to
+the same devbox environment, which supplies their shared action keybindings.
+
 ## Window views
 
 Each T3 Space window shows its own set of projects. The sidebar's project
