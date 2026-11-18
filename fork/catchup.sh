@@ -78,6 +78,8 @@ run)
   if git merge-base --is-ancestor "$target" origin/stack; then
     if fork/server.sh; then
       echo "done ok: server $(fork/server.sh base), apps $apps"
+      # Omarchy picks up the new stack today rather than at its 05:00 timer.
+      systemctl --user start --no-block t3space-omarchy.service || true
     else
       echo "done failed: server switch (it rolled back by itself), apps $apps"
       open_thread "the server switch failed"
