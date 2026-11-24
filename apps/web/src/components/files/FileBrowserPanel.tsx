@@ -14,7 +14,7 @@ import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Cause from "effect/Cause";
 import { T, useGT, useMessages } from "gt-react";
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
-import { type Ref, useEffect, useEffectEvent, useRef, useState } from "react";
+import { type ReactNode, type Ref, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
@@ -27,7 +27,7 @@ import { useTheme } from "~/hooks/useTheme";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { useFileContextMenu, type FileContextMenuAction } from "~/fileContextMenu";
 import { readLocalApi } from "~/localApi";
-import { T3_PIERRE_ICONS } from "~/pierre-icons";
+import { useFileTreeIcons } from "~/fileTreeLook/fileTreeLook";
 import {
   PIERRE_TREE_UNSAFE_CSS,
   pierreTreeStyle,
@@ -63,6 +63,7 @@ interface FileBrowserPanelProps {
   onRefreshSelectedFile?: () => void;
   workspaceMutationId: string | null;
   answersPanelFind?: boolean;
+  headerAccessory?: ReactNode;
 }
 
 function treePath(entry: ProjectEntry): string {
@@ -176,6 +177,7 @@ export default function FileBrowserPanel({
   workspaceMutationId,
   hostFolder = false,
   answersPanelFind = false,
+  headerAccessory,
 }: FileBrowserPanelProps) {
   const panelPath = (relativePath: string) =>
     hostFolder ? joinHostPath(cwd, relativePath) : relativePath;
@@ -305,6 +307,7 @@ export default function FileBrowserPanel({
   const dragMention = createFileTreeDragMentionController(
     hostFolder ? { mentionPath: (path: string) => joinHostPath(cwd, path) } : {},
   );
+  const icons = useFileTreeIcons();
   const { model } = useFileTree({
     composition: {
       contextMenu: {
@@ -319,7 +322,7 @@ export default function FileBrowserPanel({
     fileTreeSearchMode: "hide-non-matches",
     flattenEmptyDirectories: true,
     initialExpansion: "closed",
-    icons: T3_PIERRE_ICONS,
+    icons,
     onSelectionChange: (selectedPaths) => {
       // Update drag selection even for reveals so subsequent drags cannot use stale paths.
       dragMention.handleSelectionChange(selectedPaths);
@@ -347,6 +350,10 @@ export default function FileBrowserPanel({
     onSearchChange: (value) => setQuery(value ?? ""),
     unsafeCSS: PIERRE_TREE_UNSAFE_CSS,
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the icon pack into the imperative Pierre file tree model
+  useEffect(() => {
+    model.setIcons(icons);
+  }, [icons, model]);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- makes the Pierre tree model re-render row decorations when loading directories change
   useEffect(() => {
     if (loadingDirectoriesRef.current === loadingDirectories) return;
@@ -647,6 +654,7 @@ export default function FileBrowserPanel({
             </TooltipPopup>
           </Tooltip>
         ) : null}
+        {headerAccessory}
       </div>
       {error || pathSearch.error ? (
         <button

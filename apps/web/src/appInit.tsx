@@ -37,6 +37,7 @@ import {
   useComposerDraftStore,
 } from "./composerDraftStore";
 import { startDefaultThemeAdoption } from "./hooks/useDefaultTheme";
+import { startFileTreeLook } from "./fileTreeLook/fileTreeLook";
 import { startEnvironmentThemeRepaint } from "./hooks/useEnvironmentTheme";
 import { startThemeBackground } from "./themeBackground";
 import { readLocalStorageValue, subscribeLocalStorageKey } from "./hooks/useLocalStorage";
@@ -276,6 +277,7 @@ export function startAppServices(): AppRouter {
 
   startClientAppearance();
   startI18n();
+  startFileTreeLook();
   startDocumentTitle(router);
   startHostEnvironmentLookup();
   appAtomRegistry.subscribe(primaryRelayTracingAllowedAtom, setServerRelayTelemetry, {
