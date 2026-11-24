@@ -12,6 +12,7 @@ import {
   pierreTreeStyle,
   titleClippedPierreTreeRow,
 } from "~/pierre-tree-theme";
+import { useFileTreeIcons } from "~/fileTreeLook/fileTreeLook";
 
 import {
   areAllDirectoriesExpanded,
@@ -55,7 +56,7 @@ export function DiffFileTree({
   const gt = useGT();
   const { resolvedTheme } = useTheme();
   const paths = entries.map((entry) => entry.path);
-  const presented = diffFileTreeModel(paths);
+  const presented = diffFileTreeModel(paths, useFileTreeIcons());
   const modelPaths = presented.paths;
   const icons = presented.icons;
   const directoryPaths = collectDirectoryPaths(modelPaths);
@@ -200,7 +201,6 @@ export function DiffFileTree({
           <T>Files</T>
         </span>
         <span className="ml-auto tabular-nums">{entries.length}</span>
-        {headerAccessory}
         {directoryPaths.length > 0 ? (
           <Tooltip>
             <TooltipTrigger
@@ -229,6 +229,7 @@ export function DiffFileTree({
             </TooltipPopup>
           </Tooltip>
         ) : null}
+        {headerAccessory}
       </div>
       <FileTree
         model={model}

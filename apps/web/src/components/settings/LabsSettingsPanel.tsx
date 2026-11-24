@@ -15,6 +15,7 @@ import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsL
 import { useSearchableSetting } from "./settingsSearch";
 import { PaperIntegrationRow } from "./PaperIntegrationRow";
 import { CodeThemesLabsRow } from "../../codeThemes/CodeThemeSettings";
+import { FileTreeLookLabsRow } from "../../fileTreeLook/FileTreeLookSettings";
 import {
   useScopedSettings,
   useScopedSettingsMixed,
@@ -40,6 +41,7 @@ export function LabsSettingsPanel() {
         <AgentFeedbackRow />
         <PaperIntegrationRow />
         <CodeThemesLabsRow />
+        <FileTreeLookLabsRow />
       </SettingsSection>
     </SettingsPageContainer>
   );

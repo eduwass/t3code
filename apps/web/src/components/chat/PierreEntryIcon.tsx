@@ -3,6 +3,7 @@ import { memo } from "react";
 
 import { ensurePierreIconSprite, resolvePierreIconForEntry } from "../../pierre-icons";
 import { cn } from "~/lib/utils";
+import { iconResolverFor, type FileTreeLook } from "~/fileTreeLook/fileTreeLook";
 
 const ICON_COLORS: Record<string, readonly [light: string, dark: string]> = {
   astro: ["#a631be", "#d568ea"],
@@ -68,8 +69,15 @@ export const PierreEntryIcon = memo(function PierreEntryIcon(props: {
   mimeType?: string | undefined;
   theme: "light" | "dark";
   className?: string;
+  /** A file tree's icon pack and coloring; other surfaces keep T3's. */
+  look?: FileTreeLook;
 }) {
-  const icon = resolvePierreIconForEntry(props.pathValue, props.kind, props.mimeType);
+  const icon = resolvePierreIconForEntry(
+    props.pathValue,
+    props.kind,
+    props.mimeType,
+    (props.look && iconResolverFor(props.look)) ?? undefined,
+  );
 
   if (!icon) {
     return props.kind === "directory" ? (
@@ -79,7 +87,10 @@ export const PierreEntryIcon = memo(function PierreEntryIcon(props: {
     );
   }
 
-  const colors = ICON_COLORS[icon.token ?? "default"] ?? ICON_COLORS.default;
+  const colors =
+    props.look?.colored === false
+      ? ICON_COLORS.default
+      : (ICON_COLORS[icon.token ?? "default"] ?? ICON_COLORS.default);
   return (
     <svg
       aria-hidden="true"
